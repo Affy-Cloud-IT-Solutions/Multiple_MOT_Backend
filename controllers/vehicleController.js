@@ -223,15 +223,64 @@ function lookupDVLA(req, res) {
   res.json({ source: 'DVLA API (GENERATED MOCK)', found: true, vehicle: genericProfile });
 }
 
-// Curated list of popular makes in the UK
-const POPULAR_MAKES = [
-  'ALFA ROMEO', 'ASTON MARTIN', 'AUDI', 'BENTLEY', 'BMW', 'CADILLAC', 'CHEVROLET',
-  'CHRYSLER', 'CITROEN', 'DACIA', 'DODGE', 'FERRARI', 'FIAT', 'FORD', 'GMC',
-  'HONDA', 'HYUNDAI', 'INFINITI', 'JAGUAR', 'JEEP', 'KIA', 'LAMBORGHINI', 'LAND ROVER',
-  'LEXUS', 'LOTUS', 'MASERATI', 'MAZDA', 'MCLAREN', 'MERCEDES-BENZ', 'MG', 'MINI',
-  'MITSUBISHI', 'NISSAN', 'PEUGEOT', 'PORSCHE', 'RAM', 'RENAULT', 'ROLLS-ROYCE',
-  'SEAT', 'SKODA', 'SUBARU', 'SUZUKI', 'TESLA', 'TOYOTA', 'VAUXHALL', 'VOLKSWAGEN', 'VOLVO'
-];
+// Caches for vehicle makes
+let cachedMakes = [];
+let lastFetchedMakes = 0;
+const MAKES_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Helper to fetch makes from NHTSA API with caching
+async function fetchOnlineMakes() {
+  const now = Date.now();
+  if (cachedMakes.length > 0 && (now - lastFetchedMakes < MAKES_CACHE_DURATION)) {
+    return cachedMakes;
+  }
+
+  try {
+    const urls = [
+      'https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/car?format=json',
+      'https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/truck?format=json',
+      'https://vpic.nhtsa.dot.gov/api/vehicles/GetMakesForVehicleType/motorcycle?format=json'
+    ];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout
+
+    const fetchPromises = urls.map(url =>
+      fetch(url, { signal: controller.signal })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          if (data && data.Results) {
+            return data.Results.map(r => r.MakeName ? r.MakeName.trim().toUpperCase() : '').filter(Boolean);
+          }
+          return [];
+        })
+        .catch(err => {
+          console.error(`Error fetching makes from ${url}:`, err.message);
+          return [];
+        })
+    );
+
+    const results = await Promise.all(fetchPromises);
+    clearTimeout(timeoutId);
+
+    const merged = new Set();
+    // Add all results from the API
+    results.flat().forEach(make => merged.add(make));
+
+    if (merged.size > 0) {
+      cachedMakes = Array.from(merged).sort();
+      lastFetchedMakes = now;
+      console.log(`[fetchOnlineMakes] Cached ${cachedMakes.length} vehicle makes from live API.`);
+    }
+  } catch (error) {
+    console.error('Failed to fetch vehicle makes from live API:', error.message);
+  }
+
+  return cachedMakes;
+}
 
 async function getMakes(req, res) {
   try {
@@ -239,9 +288,11 @@ async function getMakes(req, res) {
     const limit = parseInt(req.query.limit, 10) || 20;
     const search = (req.query.search || '').trim().toUpperCase();
 
-    let filtered = POPULAR_MAKES;
+    const allMakes = await fetchOnlineMakes();
+
+    let filtered = allMakes;
     if (search) {
-      filtered = POPULAR_MAKES.filter(m => m.includes(search));
+      filtered = allMakes.filter(m => m.includes(search));
     }
 
     const total = filtered.length;
@@ -259,8 +310,55 @@ async function getMakes(req, res) {
       }
     });
   } catch (error) {
+    console.error('Error in getMakes endpoint:', error);
     res.status(500).json({ error: error.message });
   }
+}
+
+// Caches for vehicle models by make
+const modelsCache = {};
+const MODELS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Helper to fetch models for a make from NHTSA API with caching
+async function fetchOnlineModels(make) {
+  const makeUpper = make.toUpperCase().trim();
+  const now = Date.now();
+
+  // Return cached results if valid
+  if (modelsCache[makeUpper] && (now - modelsCache[makeUpper].timestamp < MODELS_CACHE_DURATION)) {
+    return modelsCache[makeUpper].models;
+  }
+
+  let models = [];
+  const url = `https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/${encodeURIComponent(makeUpper)}?format=json`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.Results && data.Results.length > 0) {
+        models = data.Results.map(r => r.Model_Name ? r.Model_Name.trim().toUpperCase() : '');
+        models = models.filter(Boolean);
+        models = [...new Set(models)].sort();
+      }
+    }
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    console.error(`NHTSA API call failed or timed out for make ${makeUpper}:`, fetchErr.message);
+  }
+
+  // Cache the result
+  modelsCache[makeUpper] = {
+    timestamp: now,
+    models: models
+  };
+
+  return models;
 }
 
 async function getModels(req, res) {
@@ -272,33 +370,18 @@ async function getModels(req, res) {
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const search = (req.query.search || '').trim().toLowerCase();
+    const search = (req.query.search || '').trim().toUpperCase();
 
-    // Call external NHTSA API
-    const url = `https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/${encodeURIComponent(make)}?format=json`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch models from NHTSA API: ${response.statusText}`);
-    }
-    const data = await response.json();
-    
-    let models = [];
-    if (data && data.Results) {
-      // Map and extract unique model names, and clean them up
-      models = data.Results.map(r => r.Model_Name ? r.Model_Name.trim().toUpperCase() : '');
-      models = models.filter(m => m !== '');
-      // Remove duplicates
-      models = [...new Set(models)].sort();
-    }
+    const allModels = await fetchOnlineModels(make);
 
+    let filtered = allModels;
     if (search) {
-      models = models.filter(m => m.toLowerCase().includes(search));
+      filtered = allModels.filter(m => m.includes(search));
     }
-
-    const total = models.length;
+    const total = filtered.length;
     const totalPages = Math.ceil(total / limit);
     const start = (page - 1) * limit;
-    const paginated = models.slice(start, start + limit);
+    const paginated = filtered.slice(start, start + limit);
 
     res.json({
       models: paginated,

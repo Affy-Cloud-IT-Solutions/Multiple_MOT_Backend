@@ -3,7 +3,7 @@ const User = require('../models/User');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 
-async function login(req, res) {
+async function customerLogin(req, res) {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -14,6 +14,11 @@ async function login(req, res) {
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({ error: 'No user found with this email, please signup first' });
+    }
+
+    // Check if the user is a customer
+    if (user.role !== 'customer') {
+      return res.status(403).json({ error: 'Access denied. This login is strictly for customers.' });
     }
 
     // Check hashed password using schema method
@@ -31,7 +36,62 @@ async function login(req, res) {
 
     // Create Audit Log in MongoDB
     await Audit.create({
-      activity: 'User Login',
+      activity: 'Customer Login',
+      details: `${user.username} logged in successfully as customer.`
+    });
+
+    res.json({
+      message: 'Login successful.',
+      token,
+      user: {
+        id: user._id,
+        name: user.username,
+        email: user.email,
+        role: user.role,
+        customerId: user.customerId,
+        garageId: user.garageId
+      }
+    });
+  } catch (error) {
+    console.error('Customer login error:', error);
+    res.status(500).json({ error: 'Internal server error during login.' });
+  }
+}
+
+async function adminLogin(req, res) {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    // Find user in MongoDB
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(401).json({ error: 'No user found with this email.' });
+    }
+
+    // Check if the user has admin/staff role
+    if (user.role !== 'admin' && user.role !== 'garage_admin' && user.role !== 'staff') {
+      return res.status(403).json({ error: 'Access denied. This login is strictly for staff and admins.' });
+    }
+
+    // Check hashed password using schema method
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Create JWT Token
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role, customerId: user.customerId, garageId: user.garageId },
+      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
+      { expiresIn: '24h' }
+    );
+
+    // Create Audit Log in MongoDB
+    await Audit.create({
+      activity: 'Admin/Staff Login',
       details: `${user.username} logged in successfully as ${user.role}.`
     });
 
@@ -48,7 +108,7 @@ async function login(req, res) {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Admin login error:', error);
     res.status(500).json({ error: 'Internal server error during login.' });
   }
 }
@@ -229,7 +289,8 @@ async function getProfile(req, res) {
 }
 
 module.exports = {
-  login,
+  customerLogin,
+  adminLogin,
   signup,
   createStaff,
   getStaffList,

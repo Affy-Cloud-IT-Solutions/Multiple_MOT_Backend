@@ -45,6 +45,11 @@ async function seedDatabase() {
             {
                 name: 'Apex MOT & Service Centre',
                 logoUrl: 'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=120&h=120&fit=crop',
+                images: [
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop'
+                ],
                 address: '10 Industrial Estate, London Road, London, SE1 7PB',
                 email: 'info@apexmot.co.uk',
                 phone: '020 7946 0192',
@@ -71,6 +76,11 @@ async function seedDatabase() {
             {
                 name: 'Prestige Auto Care',
                 logoUrl: 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=120&h=120&fit=crop',
+                images: [
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop'
+                ],
                 address: '88 Station Road, Manchester, M1 2WD',
                 email: 'bookings@prestigeautocare.co.uk',
                 phone: '0161 496 0231',
@@ -96,6 +106,11 @@ async function seedDatabase() {
             {
                 name: 'Cornerstone Garage',
                 logoUrl: 'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=120&h=120&fit=crop',
+                images: [
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop'
+                ],
                 address: '4 The Mews, Birmingham, B3 2KL',
                 email: 'contact@cornerstone.co.uk',
                 phone: '0121 496 0544',

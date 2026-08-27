@@ -7,8 +7,8 @@ const authMiddleware = require('../middleware/auth');
 router.post('/register', garageController.registerGarage);
 
 // Authenticated routes
-router.get('/', authMiddleware, garageController.getGarages);
-router.get('/:id', authMiddleware, garageController.getGarageById);
+router.get('/', authMiddleware.optional, garageController.getGarages);
+router.get('/:id', authMiddleware.optional, garageController.getGarageById);
 router.put('/:id', authMiddleware, garageController.updateGarage);
 router.post('/:id/upload-documents', authMiddleware, garageController.uploadGarageDocs);
 router.put('/:id/status', authMiddleware, garageController.updateGarageStatus);

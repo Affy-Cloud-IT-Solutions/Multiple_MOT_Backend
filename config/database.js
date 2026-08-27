@@ -4,7 +4,7 @@ dotenv.config();
 
 const connectDB = async () => {
     try {
-        const conn = await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/mot-reminder');
+        const conn = await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/multi-mot-database');
 
         console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
         console.log(`📦 Database: ${conn.connection.name}`);
