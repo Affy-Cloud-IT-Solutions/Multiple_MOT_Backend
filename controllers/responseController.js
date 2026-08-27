@@ -142,7 +142,30 @@ async function executeAction(req, res) {
       const regUpper = registrationNumber.toUpperCase().trim();
       const makeModel = `${make.toUpperCase().trim()} ${model.toUpperCase().trim()}`;
 
-      // Create NEW_VEHICLE Alert for Admin approval
+      // 1. Check if vehicle already exists in database
+      const existingVehicle = await Vehicle.findOne({ registrationNumber: regUpper });
+      if (existingVehicle) {
+        existingVehicle.customerId = customer._id;
+        existingVehicle.make = make.toUpperCase().trim();
+        existingVehicle.model = model.toUpperCase().trim();
+        if (year) existingVehicle.year = parseInt(year, 10);
+        if (motExpiryDate) existingVehicle.motExpiryDate = new Date(motExpiryDate);
+        existingVehicle.status = 'Active';
+        await existingVehicle.save();
+      } else {
+        // Create new vehicle directly as Active
+        await Vehicle.create({
+          customerId: customer._id,
+          registrationNumber: regUpper,
+          make: make.toUpperCase().trim(),
+          model: model.toUpperCase().trim(),
+          year: year ? parseInt(year, 10) : 2018,
+          motExpiryDate: new Date(motExpiryDate),
+          status: 'Active'
+        });
+      }
+
+      // 2. Create NEW_VEHICLE Alert as Approved directly
       const newAlert = await Alert.create({
         type: 'NEW_VEHICLE',
         customerName,
@@ -151,15 +174,15 @@ async function executeAction(req, res) {
         makeModel,
         year: year ? parseInt(year, 10) : undefined,
         motExpiryDate: motExpiryDate ? new Date(motExpiryDate) : undefined,
-        status: 'Pending'
+        status: 'Approved'
       });
 
       await Audit.create({
-        activity: 'New Vehicle Requested',
-        details: `${customerName} requested vehicle registration approval for ${makeModel} (${regUpper})`
+        activity: 'Vehicle Added (Auto-Approved)',
+        details: `${customerName} added vehicle ${makeModel} (${regUpper}) via portal link (automatically approved).`
       });
 
-      return res.json({ message: 'New vehicle details submitted to garage for approval.', alert: formatDoc(newAlert) });
+      return res.json({ message: 'Vehicle added and activated successfully.', alert: formatDoc(newAlert) });
     }
 
     res.status(400).json({ error: 'Invalid action type requested.' });

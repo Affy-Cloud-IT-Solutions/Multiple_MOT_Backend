@@ -118,8 +118,8 @@ async function createAlert(req, res) {
       auditActivity = 'Vehicle Marked Sold';
       auditDetails = `${customerName} reported vehicle sold: ${makeModel} (${registrationNumber})`;
     } else if (type === 'NEW_VEHICLE') {
-      auditActivity = 'New Vehicle Requested';
-      auditDetails = `${customerName} requested vehicle registration approval for ${makeModel} (${registrationNumber})`;
+      auditActivity = 'New Vehicle Registered';
+      auditDetails = `${customerName} registered vehicle ${makeModel} (${registrationNumber})`;
     }
 
     await Audit.create({

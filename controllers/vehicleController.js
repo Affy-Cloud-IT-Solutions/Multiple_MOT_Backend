@@ -228,6 +228,85 @@ let cachedMakes = [];
 let lastFetchedMakes = 0;
 const MAKES_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
+// Helper to map legal manufacturer names to trade names
+function cleanMakeName(make) {
+  if (!make) return '';
+  let name = make.toUpperCase().trim();
+
+  // Specific mappings
+  if (name.includes('BAYERISCHE MOTOREN WERKE') || name.startsWith('BMW')) {
+    return 'BMW';
+  }
+  if (name.startsWith('TESLA')) {
+    return 'TESLA';
+  }
+  if (name.startsWith('FORD')) {
+    return 'FORD';
+  }
+  if (name.startsWith('TOYOTA')) {
+    return 'TOYOTA';
+  }
+  if (name.startsWith('HONDA')) {
+    return 'HONDA';
+  }
+  if (name.startsWith('NISSAN')) {
+    return 'NISSAN';
+  }
+  if (name.startsWith('VOLKSWAGEN')) {
+    return 'VOLKSWAGEN';
+  }
+  if (name.startsWith('HYUNDAI')) {
+    return 'HYUNDAI';
+  }
+  if (name.startsWith('MERCEDES-BENZ') || name.includes('MERCEDES')) {
+    return 'MERCEDES-BENZ';
+  }
+  if (name.startsWith('CHEVROLET')) {
+    return 'CHEVROLET';
+  }
+  if (name.startsWith('PORSCHE')) {
+    return 'PORSCHE';
+  }
+  if (name.startsWith('AUDI')) {
+    return 'AUDI';
+  }
+  if (name.startsWith('LEXUS')) {
+    return 'LEXUS';
+  }
+  if (name.startsWith('MAZDA')) {
+    return 'MAZDA';
+  }
+  if (name.startsWith('SUBARU')) {
+    return 'SUBARU';
+  }
+  if (name.startsWith('JAGUAR')) {
+    return 'JAGUAR';
+  }
+  if (name.startsWith('LAND ROVER')) {
+    return 'LAND ROVER';
+  }
+
+  // Remove common suffixes
+  name = name
+    .replace(/,\s*INC\.?$/g, '')
+    .replace(/,\s*LLC$/g, '')
+    .replace(/\s*LLC$/g, '')
+    .replace(/\s*INC\.?$/g, '')
+    .replace(/\s*CORP\.?$/g, '')
+    .replace(/\s*CORPORATION$/g, '')
+    .replace(/\s*CO\.?,\s*LTD\.?$/g, '')
+    .replace(/\s*LTD\.?$/g, '')
+    .replace(/\s*LIMITED$/g, '')
+    .replace(/\s*MOTOR\s+COMPANY$/g, '')
+    .replace(/\s*MOTOR\s+CO\.?$/g, '')
+    .replace(/\s*MOTORS$/g, '')
+    .replace(/\s*GROUP$/g, '')
+    .replace(/\s*OF\s+NORTH\s+AMERICA$/g, '')
+    .replace(/\s*OF\s+AMERICA$/g, '');
+
+  return name.trim();
+}
+
 // Helper to fetch makes from NHTSA API with caching
 async function fetchOnlineMakes() {
   const now = Date.now();
@@ -267,8 +346,13 @@ async function fetchOnlineMakes() {
     clearTimeout(timeoutId);
 
     const merged = new Set();
-    // Add all results from the API
-    results.flat().forEach(make => merged.add(make));
+    // Add cleaned results from the API
+    results.flat().forEach(make => {
+      const cleaned = cleanMakeName(make);
+      if (cleaned) {
+        merged.add(cleaned);
+      }
+    });
 
     if (merged.size > 0) {
       cachedMakes = Array.from(merged).sort();
@@ -315,52 +399,6 @@ async function getMakes(req, res) {
   }
 }
 
-// Caches for vehicle models by make
-const modelsCache = {};
-const MODELS_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-// Helper to fetch models for a make from NHTSA API with caching
-async function fetchOnlineModels(make) {
-  const makeUpper = make.toUpperCase().trim();
-  const now = Date.now();
-
-  // Return cached results if valid
-  if (modelsCache[makeUpper] && (now - modelsCache[makeUpper].timestamp < MODELS_CACHE_DURATION)) {
-    return modelsCache[makeUpper].models;
-  }
-
-  let models = [];
-  const url = `https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/${encodeURIComponent(makeUpper)}?format=json`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.Results && data.Results.length > 0) {
-        models = data.Results.map(r => r.Model_Name ? r.Model_Name.trim().toUpperCase() : '');
-        models = models.filter(Boolean);
-        models = [...new Set(models)].sort();
-      }
-    }
-  } catch (fetchErr) {
-    clearTimeout(timeoutId);
-    console.error(`NHTSA API call failed or timed out for make ${makeUpper}:`, fetchErr.message);
-  }
-
-  // Cache the result
-  modelsCache[makeUpper] = {
-    timestamp: now,
-    models: models
-  };
-
-  return models;
-}
-
 async function getModels(req, res) {
   try {
     const make = (req.query.make || '').trim();
@@ -370,19 +408,38 @@ async function getModels(req, res) {
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const search = (req.query.search || '').trim().toUpperCase();
+    const search = (req.query.search || '').trim().toLowerCase();
 
-    const allModels = await fetchOnlineModels(make);
-
-    let filtered = allModels;
-    if (search) {
-      filtered = allModels.filter(m => m.includes(search));
+    // 1. Call external NHTSA API
+    const url = `https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/${encodeURIComponent(make)}?format=json`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models from NHTSA API: ${response.statusText}`);
     }
-    const total = filtered.length;
+    const data = await response.json();
+    
+    let models = [];
+    if (data && data.Results) {
+      // 2. Map and extract unique model names, clean whitespace, and capitalize
+      models = data.Results.map(r => r.Model_Name ? r.Model_Name.trim().toUpperCase() : '');
+      models = models.filter(m => m !== '');
+      
+      // 3. Remove duplicates
+      models = [...new Set(models)].sort();
+    }
+
+    // 4. Filter by optional search term
+    if (search) {
+      models = models.filter(m => m.toLowerCase().includes(search));
+    }
+
+    // 5. Paginate results
+    const total = models.length;
     const totalPages = Math.ceil(total / limit);
     const start = (page - 1) * limit;
-    const paginated = filtered.slice(start, start + limit);
+    const paginated = models.slice(start, start + limit);
 
+    // 6. Return response containing models and pagination details
     res.json({
       models: paginated,
       pagination: {
