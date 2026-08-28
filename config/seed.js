@@ -228,32 +228,32 @@ async function seedDatabase() {
         const vehicleDocs = await Vehicle.create([
             {
                 customerId: customerDocs[0]._id,
-                registrationNumber: 'AB18 CDE',
-                make: 'FORD',
-                model: 'FOCUS TDCI',
-                year: 2018,
-                motExpiryDate: new Date('2026-08-25'),
-                lastServiceDate: new Date('2025-08-20'),
+                registrationNumber: 'GK17UTO',
+                make: 'MITSUBISHI',
+                model: 'OUTLANDER',
+                year: 2017,
+                motExpiryDate: new Date('2026-11-02'),
+                lastServiceDate: new Date('2025-10-29'),
+                status: 'Active'
+            },
+            {
+                customerId: customerDocs[0]._id,
+                registrationNumber: 'CU15XZG',
+                make: 'VOLKSWAGEN',
+                model: 'GOLF',
+                year: 2015,
+                motExpiryDate: new Date('2026-09-18'),
+                lastServiceDate: new Date('2025-09-10'),
                 status: 'Active'
             },
             {
                 customerId: customerDocs[1]._id,
-                registrationNumber: 'LD65 XYZ',
-                make: 'VAUXHALL',
-                model: 'CORSA ECOFLEX',
-                year: 2015,
-                motExpiryDate: new Date('2026-07-29'),
-                lastServiceDate: new Date('2025-07-15'),
-                status: 'Active'
-            },
-            {
-                customerId: customerDocs[2]._id,
-                registrationNumber: 'MH07 KKK',
-                make: 'BMW',
-                model: '320D M SPORT',
-                year: 2019,
-                motExpiryDate: new Date('2026-08-10'),
-                lastServiceDate: new Date('2025-10-05'),
+                registrationNumber: 'GK17UTO',
+                make: 'MITSUBISHI',
+                model: 'OUTLANDER',
+                year: 2017,
+                motExpiryDate: new Date('2026-11-02'),
+                lastServiceDate: new Date('2025-10-29'),
                 status: 'Active'
             }
         ]);
@@ -277,8 +277,8 @@ async function seedDatabase() {
                 customerName: 'John Doe',
                 customerId: customerDocs[0]._id,
                 garageId: garageDocs[0]._id,
-                registrationNumber: 'AB18 CDE',
-                makeModel: 'FORD FOCUS TDCI',
+                registrationNumber: 'GK17UTO',
+                makeModel: 'MITSUBISHI OUTLANDER',
                 serviceName: 'MOT',
                 price: 45,
                 duration: 45,
@@ -290,8 +290,8 @@ async function seedDatabase() {
                 customerName: 'Sarah Jenkins',
                 customerId: customerDocs[1]._id,
                 garageId: garageDocs[1]._id,
-                registrationNumber: 'LD65 XYZ',
-                makeModel: 'VAUXHALL CORSA ECOFLEX',
+                registrationNumber: 'CU15XZG',
+                makeModel: 'VOLKSWAGEN GOLF',
                 serviceName: 'Full Service',
                 price: 140,
                 duration: 180,
@@ -312,12 +312,12 @@ async function seedDatabase() {
             {
                 date: new Date('2026-07-20T09:00:00Z'),
                 activity: 'Reminder Sent (45 Days)',
-                details: 'Reminder 1 sent to John Doe for FORD FOCUS (AB18 CDE) via SMS'
+                details: 'Reminder 1 sent to John Doe for MITSUBISHI OUTLANDER (GK17UTO) via SMS'
             },
             {
                 date: new Date('2026-07-21T09:00:00Z'),
                 activity: 'Reminder Sent (7 Days)',
-                details: 'Reminder 3 sent to Sarah Jenkins for VAUXHALL CORSA (LD65 XYZ) via Email'
+                details: 'Reminder 3 sent to Sarah Jenkins for VOLKSWAGEN GOLF (CU15XZG) via Email'
             }
         ]);
 

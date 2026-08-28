@@ -152,79 +152,75 @@ async function deleteVehicle(req, res) {
   }
 }
 
-// Mock DVLA Lookup Integration
-function lookupDVLA(req, res) {
+const dvsaService = require('../services/dvsaService');
+
+// Live DVLA Lookup Integration
+async function lookupDVLA(req, res) {
   const vrn = req.params.vrn.toUpperCase().trim();
   
   if (!isValidVRN(vrn)) {
     return res.status(400).json({ error: 'Invalid UK registration mark.' });
   }
 
-  // Predefined mock database of DVLA profiles
-  const MOCK_DVLA_PROFILES = {
-    'AB18 CDE': {
-      registrationNumber: 'AB18 CDE',
-      make: 'FORD',
-      model: 'FOCUS TDCI',
-      year: '2018',
-      color: 'Grey',
-      fuelType: 'Diesel',
-      engineSize: '1499cc',
-      motStatus: 'Valid',
-      motExpiryDate: '2027-07-12',
-      taxStatus: 'Taxed'
-    },
-    'LD65 XYZ': {
-      registrationNumber: 'LD65 XYZ',
-      make: 'VAUXHALL',
-      model: 'CORSA ECOFLEX',
-      year: '2015',
-      color: 'Red',
-      fuelType: 'Petrol',
-      engineSize: '1398cc',
-      motStatus: 'Expired',
-      motExpiryDate: '2026-01-14',
-      taxStatus: 'Untaxed'
-    },
-    'MH07 KKK': {
-      registrationNumber: 'MH07 KKK',
-      make: 'BMW',
-      model: '320D M SPORT',
-      year: '2019',
-      color: 'White',
-      fuelType: 'Diesel',
-      engineSize: '1995cc',
-      motStatus: 'Valid',
-      motExpiryDate: '2026-10-28',
-      taxStatus: 'Taxed'
+  try {
+    const rawData = await dvsaService.getVehicleMotHistory(vrn);
+    if (!rawData) {
+      return res.status(404).json({ found: false, error: 'Vehicle details not found in DVSA registry.' });
     }
-  };
 
-  const profile = MOCK_DVLA_PROFILES[vrn];
-  if (profile) {
-    return res.json({ source: 'DVLA API (MOCK)', found: true, vehicle: profile });
+    // Map raw DVSA data to the frontend structure
+    const motTests = rawData.motTests || [];
+    const latestTest = motTests[0] || null;
+
+    let advisories = [];
+    let failures = [];
+    if (latestTest && latestTest.defects) {
+      latestTest.defects.forEach(defect => {
+        const type = (defect.type || '').toUpperCase();
+        if (type === 'ADVISORY' || type === 'MINOR') {
+          advisories.push(defect.text);
+        } else if (type === 'FAIL' || type === 'MAJOR' || type === 'DANGEROUS') {
+          failures.push(defect.text);
+        }
+      });
+    }
+
+    const mappedVehicle = {
+      registrationNumber: rawData.registration,
+      make: rawData.make,
+      model: rawData.model,
+      year: rawData.firstUsedDate ? new Date(rawData.firstUsedDate).getFullYear() : 2018,
+      color: rawData.primaryColour || 'Grey',
+      fuelType: rawData.fuelType || 'Petrol',
+      engineSize: rawData.engineSize ? `${rawData.engineSize}cc` : '1500cc',
+      motStatus: latestTest ? (latestTest.testResult === 'PASSED' ? 'Valid' : 'Expired') : 'No History',
+      motExpiryDate: latestTest ? latestTest.expiryDate : '',
+      lastServiceDate: latestTest ? latestTest.completedDate : '',
+      testNumber: latestTest ? latestTest.motTestNumber : '',
+      mileage: latestTest ? (latestTest.odometerValue ? `${latestTest.odometerValue} ${latestTest.odometerUnit === 'MI' ? 'miles' : 'km'}` : 'N/A') : 'N/A',
+      advisories,
+      failures,
+      motTests: motTests // Include full list for the history tab
+    };
+
+    res.json({ source: 'DVSA LIVE API', found: true, vehicle: mappedVehicle });
+  } catch (error) {
+    console.error('[vehicleController] lookupDVLA error:', error);
+    res.status(500).json({ error: 'Failed to fetch vehicle history from DVSA.' });
   }
-
-  // Generate generic mock response on the fly
-  const isPass = vrn.charCodeAt(0) % 2 === 0;
-  const genericProfile = {
-    registrationNumber: vrn,
-    make: 'VOLKSWAGEN',
-    model: 'GOLF TSI',
-    year: '2017',
-    color: 'Blue',
-    fuelType: 'Petrol',
-    engineSize: '1395cc',
-    motStatus: isPass ? 'Valid' : 'Expired',
-    motExpiryDate: isPass ? '2026-09-18' : '2026-05-10',
-    taxStatus: isPass ? 'Taxed' : 'SORN'
-  };
-
-  res.json({ source: 'DVLA API (GENERATED MOCK)', found: true, vehicle: genericProfile });
 }
 
+const FALLBACK_MAKES = [
+  'ALFA ROMEO', 'ASTON MARTIN', 'AUDI', 'BENTLEY', 'BMW', 'CITROEN', 'CUPRA', 'DACIA', 
+  'DS', 'FERRARI', 'FIAT', 'FORD', 'HONDA', 'HYUNDAI', 'JAGUAR', 'JEEP', 'KIA', 
+  'LAMBORGHINI', 'LAND ROVER', 'LEXUS', 'LOTUS', 'MASERATI', 'MAZDA', 'MCLAREN', 
+  'MERCEDES-BENZ', 'MG', 'MINI', 'MITSUBISHI', 'NISSAN', 'PEUGEOT', 'PORSCHE', 
+  'RENAULT', 'ROLLS-ROYCE', 'SEAT', 'SKODA', 'SMART', 'SSANGYONG', 'SUBARU', 
+  'SUZUKI', 'TESLA', 'TOYOTA', 'VAUXHALL', 'VOLKSWAGEN', 'VOLVO'
+];
+
 // Caches for vehicle makes
-let cachedMakes = [];
+let cachedMakes = [...FALLBACK_MAKES];
 let lastFetchedMakes = 0;
 const MAKES_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -310,7 +306,8 @@ function cleanMakeName(make) {
 // Helper to fetch makes from NHTSA API with caching
 async function fetchOnlineMakes() {
   const now = Date.now();
-  if (cachedMakes.length > 0 && (now - lastFetchedMakes < MAKES_CACHE_DURATION)) {
+  // If we have successfully fetched makes within the cache duration, return cache
+  if (lastFetchedMakes > 0 && (now - lastFetchedMakes < MAKES_CACHE_DURATION)) {
     return cachedMakes;
   }
 
@@ -345,7 +342,7 @@ async function fetchOnlineMakes() {
     const results = await Promise.all(fetchPromises);
     clearTimeout(timeoutId);
 
-    const merged = new Set();
+    const merged = new Set(FALLBACK_MAKES);
     // Add cleaned results from the API
     results.flat().forEach(make => {
       const cleaned = cleanMakeName(make);
@@ -361,6 +358,8 @@ async function fetchOnlineMakes() {
     }
   } catch (error) {
     console.error('Failed to fetch vehicle makes from live API:', error.message);
+    // On failure, set last fetched to retry in 10 minutes so we don't spam the failed server
+    lastFetchedMakes = now - MAKES_CACHE_DURATION + (10 * 60 * 1000);
   }
 
   return cachedMakes;
@@ -372,7 +371,15 @@ async function getMakes(req, res) {
     const limit = parseInt(req.query.limit, 10) || 20;
     const search = (req.query.search || '').trim().toUpperCase();
 
-    const allMakes = await fetchOnlineMakes();
+    // Trigger online fetch in the background asynchronously (never blocks the API request)
+    const now = Date.now();
+    if (lastFetchedMakes === 0 || (now - lastFetchedMakes > MAKES_CACHE_DURATION)) {
+      // Set to now temporarily to avoid triggering duplicate parallel requests
+      lastFetchedMakes = now;
+      fetchOnlineMakes().catch(err => console.error('[Background Fetch Makes] Failed:', err.message));
+    }
+
+    const allMakes = cachedMakes;
 
     let filtered = allMakes;
     if (search) {
