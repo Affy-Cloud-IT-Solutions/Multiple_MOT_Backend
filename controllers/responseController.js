@@ -2,6 +2,7 @@ const Customer = require('../models/Customer');
 const Vehicle = require('../models/Vehicle');
 const Alert = require('../models/Alert');
 const Audit = require('../models/Audit');
+const Garage = require('../models/Garage');
 const { encryptToken, decryptToken } = require('../utils/helpers');
 
 const formatDoc = (doc) => {
@@ -87,15 +88,52 @@ async function executeAction(req, res) {
         return res.status(404).json({ error: 'Vehicle details not found.' });
       }
 
+      const { garageId, date, slot } = req.body;
+      if (!garageId) {
+        return res.status(400).json({ error: 'Garage selection is required for booking.' });
+      }
+
+      // Fetch service info from the selected garage if possible
+      const garage = await Garage.findById(garageId);
+      let serviceName = 'MOT Test';
+      let price = 45.00;
+      let duration = 45;
+      if (garage && garage.services && garage.services.length > 0) {
+        const motSvc = garage.services.find(s => s.name.toUpperCase().includes('MOT'));
+        if (motSvc) {
+          serviceName = motSvc.name;
+          price = motSvc.price;
+          duration = motSvc.duration;
+        } else {
+          serviceName = garage.services[0].name;
+          price = garage.services[0].price;
+          duration = garage.services[0].duration;
+        }
+      }
+
+      let makeModel = `${vehicle.make} ${vehicle.model}`;
+      if (date && slot) {
+        const parts = date.split('-');
+        const monthsList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const displayDateStr = parts.length === 3 
+          ? `${parseInt(parts[2])} ${monthsList[parseInt(parts[1]) - 1]}`
+          : date;
+        makeModel = `${vehicle.make} ${vehicle.model} - Slot: ${displayDateStr} at ${slot}`;
+      }
+
       // Create BOOKED Alert in MongoDB
-      const makeModel = `${vehicle.make} ${vehicle.model}`;
       const newAlert = await Alert.create({
         type: 'BOOKED',
         customerName,
         customerId: customer._id,
+        garageId,
+        serviceName,
+        price,
+        duration,
         registrationNumber: vehicle.registrationNumber,
         makeModel,
-        status: 'Pending'
+        status: 'Pending',
+        date: date ? new Date(date) : Date.now()
       });
 
       await Audit.create({
@@ -116,12 +154,22 @@ async function executeAction(req, res) {
       vehicle.status = 'Sold';
       await vehicle.save();
 
+      // Find the last booking or reminder for this vehicle to find the garageId
+      const lastBooking = await Alert.findOne({
+        registrationNumber: vehicle.registrationNumber,
+        type: 'BOOKED',
+        garageId: { $ne: null }
+      }).sort({ createdAt: -1 });
+
+      const targetGarageId = lastBooking ? lastBooking.garageId : undefined;
+
       // Create SOLD Alert in MongoDB
       const makeModel = `${vehicle.make} ${vehicle.model}`;
       const newAlert = await Alert.create({
         type: 'SOLD',
         customerName,
         customerId: customer._id,
+        garageId: targetGarageId,
         registrationNumber: vehicle.registrationNumber,
         makeModel,
         status: 'Pending'
@@ -139,6 +187,11 @@ async function executeAction(req, res) {
         return res.status(400).json({ error: 'Registration number, make, model, and MOT expiry date are required to add a vehicle.' });
       }
 
+      const { garageId } = req.body;
+      if (!garageId) {
+        return res.status(400).json({ error: 'Garage selection is required for vehicle approval request.' });
+      }
+
       const regUpper = registrationNumber.toUpperCase().trim();
       const makeModel = `${make.toUpperCase().trim()} ${model.toUpperCase().trim()}`;
 
@@ -150,10 +203,10 @@ async function executeAction(req, res) {
         existingVehicle.model = model.toUpperCase().trim();
         if (year) existingVehicle.year = parseInt(year, 10);
         if (motExpiryDate) existingVehicle.motExpiryDate = new Date(motExpiryDate);
-        existingVehicle.status = 'Active';
+        existingVehicle.status = 'Pending'; // Change to pending for approval
         await existingVehicle.save();
       } else {
-        // Create new vehicle directly as Active
+        // Create new vehicle directly as Pending
         await Vehicle.create({
           customerId: customer._id,
           registrationNumber: regUpper,
@@ -161,20 +214,21 @@ async function executeAction(req, res) {
           model: model.toUpperCase().trim(),
           year: year ? parseInt(year, 10) : 2018,
           motExpiryDate: new Date(motExpiryDate),
-          status: 'Active'
+          status: 'Pending'
         });
       }
 
-      // 2. Create NEW_VEHICLE Alert as Approved directly
+      // 2. Create NEW_VEHICLE Alert as Pending
       const newAlert = await Alert.create({
         type: 'NEW_VEHICLE',
         customerName,
         customerId: customer._id,
+        garageId,
         registrationNumber: regUpper,
         makeModel,
         year: year ? parseInt(year, 10) : undefined,
         motExpiryDate: motExpiryDate ? new Date(motExpiryDate) : undefined,
-        status: 'Approved'
+        status: 'Pending'
       });
 
       await Audit.create({
