@@ -1,6 +1,8 @@
 const Garage = require('../models/Garage');
 const User = require('../models/User');
 const Audit = require('../models/Audit');
+const Alert = require('../models/Alert');
+const Vehicle = require('../models/Vehicle');
 const jwt = require('jsonwebtoken');
 
 const formatDoc = (doc) => {
@@ -88,7 +90,27 @@ async function getGarages(req, res) {
     }
 
     const garages = await Garage.find(query).sort({ rating: -1 });
-    res.json(garages.map(formatDoc));
+
+    // Populate extra metrics for garages
+    const enrichedGarages = await Promise.all(
+      garages.map(async (g) => {
+        const garageObj = formatDoc(g);
+        const [staffCount, bookingsCount, garageAlerts] = await Promise.all([
+          User.countDocuments({ garageId: g._id, role: { $in: ['staff', 'garage_admin'] } }),
+          Alert.countDocuments({ garageId: g._id, type: 'BOOKED' }),
+          Alert.find({ garageId: g._id }).select('customerId')
+        ]);
+        const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+        return {
+          ...garageObj,
+          staffCount,
+          bookingsCount,
+          customerCount: customerIds.length
+        };
+      })
+    );
+
+    res.json(enrichedGarages);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -101,7 +123,20 @@ async function getGarageById(req, res) {
     if (!garage) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
-    res.json(formatDoc(garage));
+    const [staffList, bookingsCount, garageAlerts] = await Promise.all([
+      User.find({ garageId: garage._id, role: { $in: ['staff', 'garage_admin'] } }).select('-password'),
+      Alert.countDocuments({ garageId: garage._id, type: 'BOOKED' }),
+      Alert.find({ garageId: garage._id }).select('customerId')
+    ]);
+    const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+
+    res.json({
+      ...formatDoc(garage),
+      staffList: staffList.map(formatDoc),
+      staffCount: staffList.length,
+      bookingsCount,
+      customerCount: customerIds.length
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

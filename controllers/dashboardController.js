@@ -15,6 +15,45 @@ async function getDashboardStats(req, res) {
     let auditCount = 0;
     let alertQuery = { type: 'BOOKED' };
 
+    if (role === 'admin') {
+      const [
+        totalGarages,
+        approvedGarages,
+        pendingGarages,
+        totalCustomers,
+        totalVehicles,
+        activeVehiclesCount,
+        soldVehiclesCount,
+        totalBookings,
+        totalAudits
+      ] = await Promise.all([
+        Garage.countDocuments({}),
+        Garage.countDocuments({ status: 'Approved' }),
+        Garage.countDocuments({ status: 'Pending' }),
+        Customer.countDocuments({}),
+        Vehicle.countDocuments({}),
+        Vehicle.countDocuments({ status: 'Active' }),
+        Vehicle.countDocuments({ status: 'Sold' }),
+        Alert.countDocuments({ type: 'BOOKED' }),
+        Audit.countDocuments({})
+      ]);
+
+      return res.json({
+        totalGarages,
+        approvedGarages,
+        pendingGarages,
+        totalCustomers,
+        totalVehicles,
+        activeVehicles: activeVehiclesCount,
+        vehiclesSold: soldVehiclesCount,
+        bookedMots: totalBookings,
+        totalAudits,
+        dueIn7Days: 0,
+        dueIn30Days: 0,
+        dueIn45Days: 0
+      });
+    }
+
     if (role === 'garage_admin' || role === 'staff') {
       const garageAlerts = await Alert.find({ garageId }).select('customerId');
       const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];

@@ -13,9 +13,10 @@ const formatDoc = (doc) => {
 async function getAllCustomers(req, res) {
   try {
     const role = req.user?.role;
+    const filterGarageId = req.query.garageId || (role === 'garage_admin' || role === 'staff' ? req.user?.garageId : null);
     let query = {};
-    if (role === 'garage_admin' || role === 'staff') {
-      const garageAlerts = await Alert.find({ garageId: req.user.garageId }).select('customerId');
+    if (filterGarageId) {
+      const garageAlerts = await Alert.find({ garageId: filterGarageId }).select('customerId');
       const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
       query._id = { $in: customerIds };
     }

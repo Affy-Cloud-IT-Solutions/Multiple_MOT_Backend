@@ -177,12 +177,12 @@ async function signup(req, res) {
 
 async function createStaff(req, res) {
   try {
-    // Allow both Super Admin and Garage Admin to register staff
-    if (req.user?.role !== 'admin' && req.user?.role !== 'garage_admin') {
-      return res.status(403).json({ error: 'Access Denied. You do not have permissions to register staff accounts.' });
+    // Only Garage Admin can register staff for their garage
+    if (req.user?.role !== 'garage_admin') {
+      return res.status(403).json({ error: 'Access Denied. Only Garage Admins can register staff accounts.' });
     }
 
-    const { name, email, password, garageId } = req.body;
+    const { name, email, password } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
     }
@@ -198,12 +198,12 @@ async function createStaff(req, res) {
       email: emailLower,
       password, // Pre-save hooks will bcrypt hash
       role: 'staff',
-      garageId: req.user?.role === 'admin' ? garageId : req.user?.garageId
+      garageId: req.user?.garageId
     });
 
     await Audit.create({
       activity: 'Staff Account Created',
-      details: `Super Admin created new staff account for ${name} (${emailLower})`
+      details: `Garage Admin created new staff account for ${name} (${emailLower})`
     });
 
     res.status(201).json({

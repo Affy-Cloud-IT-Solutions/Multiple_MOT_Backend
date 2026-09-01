@@ -203,10 +203,10 @@ async function executeAction(req, res) {
         existingVehicle.model = model.toUpperCase().trim();
         if (year) existingVehicle.year = parseInt(year, 10);
         if (motExpiryDate) existingVehicle.motExpiryDate = new Date(motExpiryDate);
-        existingVehicle.status = 'Pending'; // Change to pending for approval
+        existingVehicle.status = 'Active'; // Directly Active, no approval required
         await existingVehicle.save();
       } else {
-        // Create new vehicle directly as Pending
+        // Create new vehicle directly as Active
         await Vehicle.create({
           customerId: customer._id,
           registrationNumber: regUpper,
@@ -214,11 +214,11 @@ async function executeAction(req, res) {
           model: model.toUpperCase().trim(),
           year: year ? parseInt(year, 10) : 2018,
           motExpiryDate: new Date(motExpiryDate),
-          status: 'Pending'
+          status: 'Active'
         });
       }
 
-      // 2. Create NEW_VEHICLE Alert as Pending
+      // 2. Create NEW_VEHICLE Alert as Approved / Informational
       const newAlert = await Alert.create({
         type: 'NEW_VEHICLE',
         customerName,
@@ -228,12 +228,12 @@ async function executeAction(req, res) {
         makeModel,
         year: year ? parseInt(year, 10) : undefined,
         motExpiryDate: motExpiryDate ? new Date(motExpiryDate) : undefined,
-        status: 'Pending'
+        status: 'Approved'
       });
 
       await Audit.create({
-        activity: 'Vehicle Added (Auto-Approved)',
-        details: `${customerName} added vehicle ${makeModel} (${regUpper}) via portal link (automatically approved).`
+        activity: 'Vehicle Added (Active)',
+        details: `${customerName} added vehicle ${makeModel} (${regUpper}) - automatically activated with no approval required.`
       });
 
       return res.json({ message: 'Vehicle added and activated successfully.', alert: formatDoc(newAlert) });
