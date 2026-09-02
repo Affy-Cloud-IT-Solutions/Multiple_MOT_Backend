@@ -14,9 +14,19 @@ async function getAllAlerts(req, res) {
     let query = {};
     const role = req.user?.role;
     if (role === 'garage_admin' || role === 'staff') {
+      if (!req.user?.garageId) {
+        return res.json([]);
+      }
       query.garageId = req.user.garageId;
     } else if (role === 'customer') {
+      if (!req.user?.customerId) {
+        return res.json([]);
+      }
       query.customerId = req.user.customerId;
+    } else if (role === 'admin') {
+      if (req.query.garageId) {
+        query.garageId = req.query.garageId;
+      }
     }
     const alerts = await Alert.find(query).sort({ createdAt: -1 });
     res.json(alerts.map(formatDoc));
@@ -27,30 +37,122 @@ async function getAllAlerts(req, res) {
 
 async function createAlert(req, res) {
   try {
-    const { type, customerName, customerId, registrationNumber, makeModel, status, date, garageId, serviceName, price, duration } = req.body;
+    const {
+      type,
+      customerName,
+      customerId,
+      registrationNumber,
+      makeModel,
+      status,
+      date,
+      garageId,
+      serviceName,
+      price,
+      duration,
+      slotTime,
+      stationId,
+      stationName
+    } = req.body;
     const targetGarageId = garageId || req.user?.garageId;
 
-    if (type === 'BOOKED') {
-      // Enforce slot availability check
-      if (date && makeModel.includes('Slot:')) {
-        const slotName = makeModel.split(' - Slot: ')[1];
-        const dateStr = new Date(date).toISOString().split('T')[0];
-        const garage = await Garage.findById(targetGarageId);
-        if (garage) {
-          const isBlocked = garage.blockedSlots.some(s => s.date === dateStr && s.slot === slotName);
-          if (isBlocked) {
-            return res.status(400).json({ error: 'This time slot is blocked by the garage.' });
-          }
+    if (type === 'BOOKED' && !targetGarageId) {
+      return res.status(400).json({ error: 'A garage must be selected for MOT bookings.' });
+    }
+
+    let assignedStationId = stationId;
+    let assignedStationName = stationName;
+    let normalizedSlotTime = slotTime || '';
+
+    // Normalize date (convert DD-MM-YYYY to YYYY-MM-DD if needed)
+    let isoDateStr = '';
+    if (date) {
+      if (typeof date === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(date)) {
+        const [d, m, y] = date.split('-');
+        isoDateStr = `${y}-${m}-${d}`;
+      } else {
+        try {
+          isoDateStr = new Date(date).toISOString().split('T')[0];
+        } catch (e) {
+          isoDateStr = String(date);
         }
-        const alreadyBooked = await Alert.findOne({
+      }
+    }
+    const bookingDate = isoDateStr ? new Date(isoDateStr) : new Date();
+
+    if (type === 'BOOKED') {
+      // Extract time token from slotTime or makeModel
+      let timeToken = '';
+      if (slotTime) {
+        timeToken = slotTime.split(' - ')[0].trim();
+      } else if (makeModel && makeModel.includes('Slot:')) {
+        const match = makeModel.match(/(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
+        if (match) timeToken = match[1].trim();
+      }
+      normalizedSlotTime = timeToken;
+
+      const garage = await Garage.findById(targetGarageId);
+      if (garage && date && timeToken) {
+        const [y, m, d] = isoDateStr.split('-');
+        const ddmmDate = `${d}-${m}-${y}`;
+
+        // Check if slot is blocked
+        const isBlocked = (garage.blockedSlots || []).some(
+          s => (s.date === isoDateStr || s.date === ddmmDate || s.date === date) && s.slot === timeToken
+        );
+        if (isBlocked) {
+          return res.status(400).json({ error: `Slot ${timeToken} is blocked by the garage on ${ddmmDate}.` });
+        }
+
+        // Approved active stations
+        const approvedStations = (garage.stations || []).filter(
+          s => s.status === 'Approved' && s.isActive !== false
+        );
+        const approvedCapacity = Math.max(1, approvedStations.length);
+
+        const dayStart = new Date(isoDateStr);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(isoDateStr);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        // Find existing active bookings for this slot on this day
+        const existingBookings = await Alert.find({
           type: 'BOOKED',
           garageId: targetGarageId,
-          date: new Date(date),
-          makeModel: makeModel,
+          date: { $gte: dayStart, $lte: dayEnd },
           status: { $in: ['Pending', 'Approved'] }
         });
-        if (alreadyBooked) {
-          return res.status(400).json({ error: 'This time slot has already been booked. Please choose another slot.' });
+
+        const slotBookings = existingBookings.filter(b => {
+          if (registrationNumber && b.registrationNumber === registrationNumber.toUpperCase().trim()) {
+            return false; // exclude current vehicle if rebooking/rescheduling
+          }
+          if (b.slotTime) {
+            const bStart = b.slotTime.split(' - ')[0].trim();
+            return bStart === timeToken;
+          }
+          if (b.makeModel) {
+            const slotMatch = b.makeModel.match(/Slot:\s*(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i) ||
+                              b.makeModel.match(/at\s+(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
+            if (slotMatch) {
+              return slotMatch[1].trim() === timeToken;
+            }
+          }
+          return false;
+        });
+
+        if (slotBookings.length >= approvedCapacity) {
+          return res.status(400).json({
+            error: `Slot ${timeToken} is fully booked across all ${approvedCapacity} station(s). Please choose another slot.`
+          });
+        }
+
+        // Auto-assign bay to the next free station
+        if (approvedStations.length > 0 && !assignedStationName) {
+          const occupiedStationIds = new Set(slotBookings.map(b => b.stationId?.toString()).filter(Boolean));
+          const freeStation = approvedStations.find(st => !occupiedStationIds.has(st._id?.toString() || st.id));
+          const selectedSt = freeStation || approvedStations[slotBookings.length % approvedStations.length];
+          assignedStationId = selectedSt._id || selectedSt.id;
+          assignedStationName = selectedSt.name;
         }
       }
 
@@ -68,11 +170,10 @@ async function createAlert(req, res) {
         existingAlert.price = price || existingAlert.price;
         existingAlert.duration = duration || existingAlert.duration;
         existingAlert.status = status || 'Pending';
-        if (date) {
-          existingAlert.date = new Date(date);
-        } else {
-          existingAlert.date = Date.now();
-        }
+        existingAlert.slotTime = normalizedSlotTime || existingAlert.slotTime;
+        if (assignedStationId) existingAlert.stationId = assignedStationId;
+        if (assignedStationName) existingAlert.stationName = assignedStationName;
+        existingAlert.date = bookingDate;
         await existingAlert.save();
 
         let detailsStr = `${customerName} rescheduled MOT booking slot for ${makeModel} (${registrationNumber}) via portal.`;
@@ -94,13 +195,16 @@ async function createAlert(req, res) {
       customerName,
       customerId,
       garageId: targetGarageId,
+      stationId: assignedStationId,
+      stationName: assignedStationName,
+      slotTime: normalizedSlotTime,
       registrationNumber,
       makeModel,
       serviceName,
       price,
       duration,
       status: status || 'Pending',
-      date: date ? new Date(date) : Date.now()
+      date: bookingDate
     });
 
     let auditActivity = 'Notification Received';
@@ -138,6 +242,16 @@ async function approveAlert(req, res) {
     const alert = await Alert.findById(req.params.id);
     if (!alert) {
       return res.status(404).json({ error: 'Alert not found.' });
+    }
+
+    const userRole = req.user?.role;
+    if (userRole === 'customer') {
+      return res.status(403).json({ error: 'Access denied. Customers cannot approve alerts.' });
+    }
+    if ((userRole === 'garage_admin' || userRole === 'staff') && alert.garageId) {
+      if (String(alert.garageId) !== String(req.user.garageId)) {
+        return res.status(403).json({ error: 'Access denied. You can only manage alerts for your own garage.' });
+      }
     }
 
     alert.status = 'Approved';
@@ -214,6 +328,16 @@ async function acknowledgeAlert(req, res) {
       return res.status(404).json({ error: 'Alert not found.' });
     }
 
+    const userRole = req.user?.role;
+    if (userRole === 'customer') {
+      return res.status(403).json({ error: 'Access denied. Customers cannot acknowledge alerts.' });
+    }
+    if ((userRole === 'garage_admin' || userRole === 'staff') && alert.garageId) {
+      if (String(alert.garageId) !== String(req.user.garageId)) {
+        return res.status(403).json({ error: 'Access denied. You can only manage alerts for your own garage.' });
+      }
+    }
+
     alert.status = 'Acknowledged';
     await alert.save();
 
@@ -241,6 +365,16 @@ async function rejectAlert(req, res) {
     const alert = await Alert.findById(req.params.id);
     if (!alert) {
       return res.status(404).json({ error: 'Alert not found.' });
+    }
+
+    const userRole = req.user?.role;
+    if (userRole === 'customer') {
+      return res.status(403).json({ error: 'Access denied. Customers cannot reject alerts.' });
+    }
+    if ((userRole === 'garage_admin' || userRole === 'staff') && alert.garageId) {
+      if (String(alert.garageId) !== String(req.user.garageId)) {
+        return res.status(403).json({ error: 'Access denied. You can only manage alerts for your own garage.' });
+      }
     }
 
     const { reason } = req.body;
@@ -280,6 +414,17 @@ async function rescheduleAlert(req, res) {
     const alert = await Alert.findById(req.params.id);
     if (!alert) {
       return res.status(404).json({ error: 'Alert not found.' });
+    }
+
+    const userRole = req.user?.role;
+    if ((userRole === 'garage_admin' || userRole === 'staff') && alert.garageId) {
+      if (String(alert.garageId) !== String(req.user.garageId)) {
+        return res.status(403).json({ error: 'Access denied. You can only manage alerts for your own garage.' });
+      }
+    } else if (userRole === 'customer') {
+      if (alert.customerId && String(alert.customerId) !== String(req.user.customerId)) {
+        return res.status(403).json({ error: 'Access denied. You can only reschedule your own bookings.' });
+      }
     }
 
     if (alert.type !== 'BOOKED') {

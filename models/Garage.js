@@ -51,13 +51,24 @@ const GarageSchema = new mongoose.Schema({
         type: [String],
         default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     },
+    stations: [{
+        name: { type: String, required: true, trim: true },
+        type: { type: String, default: 'Class 4 MOT Bay' },
+        slotDuration: { type: Number, default: 40 }, // in minutes
+        status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' },
+        requestedAt: { type: Date, default: Date.now },
+        approvedAt: { type: Date },
+        rejectionReason: { type: String, default: '' },
+        isActive: { type: Boolean, default: true }
+    }],
     slots: {
         type: [String],
-        default: ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00']
+        default: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45']
     },
     blockedSlots: [{
         date: { type: String, required: true }, // format "YYYY-MM-DD"
-        slot: { type: String, required: true }  // e.g. "10:00"
+        slot: { type: String, required: true }, // e.g. "09:15"
+        stationId: { type: mongoose.Schema.Types.ObjectId } // optional: specific station
     }],
     verificationDocuments: [{
         name: { type: String, required: true },

@@ -12,6 +12,10 @@ router.get('/:id', authMiddleware.optional, garageController.getGarageById);
 router.put('/:id', authMiddleware, garageController.updateGarage);
 router.post('/:id/upload-documents', authMiddleware, garageController.uploadGarageDocs);
 router.put('/:id/status', authMiddleware, garageController.updateGarageStatus);
+router.get('/:id/slots', authMiddleware.optional, garageController.getGarageSlots);
+router.post('/:id/stations', authMiddleware, garageController.addGarageStation);
+router.put('/:id/stations/:stationId/status', authMiddleware, garageController.updateGarageStationStatus);
 router.post('/:id/block-slot', authMiddleware, garageController.blockGarageSlot);
+router.post('/:id/unblock-slot', authMiddleware, garageController.unblockGarageSlot);
 
 module.exports = router;

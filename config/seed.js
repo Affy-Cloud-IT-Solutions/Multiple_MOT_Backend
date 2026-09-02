@@ -62,7 +62,11 @@ async function seedDatabase() {
                     { name: 'Interim Service', price: 60, duration: 60, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true }
                 ],
                 workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-                slots: ['09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'],
+                stations: [
+                    { name: 'Station 1 (Bay A)', type: 'Class 4 MOT Bay', slotDuration: 40, status: 'Approved', requestedAt: new Date('2025-08-15'), approvedAt: new Date('2025-08-15'), isActive: true },
+                    { name: 'Station 2 (Bay B)', type: 'Class 4/7 MOT Bay', slotDuration: 40, status: 'Approved', requestedAt: new Date('2025-08-15'), approvedAt: new Date('2025-08-15'), isActive: true }
+                ],
+                slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
                     { name: 'MOT Test Station License', fileUrl: '/uploads/apex_mot_license.pdf', uploadDate: new Date('2025-08-15') },
                     { name: 'Public Liability Insurance', fileUrl: '/uploads/apex_liability_insurance.pdf', uploadDate: new Date('2025-08-15') }
@@ -93,7 +97,11 @@ async function seedDatabase() {
                     { name: 'Brake Service', price: 80, duration: 90, availability: ['Monday', 'Wednesday', 'Friday'], isActive: true }
                 ],
                 workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-                slots: ['08:30', '10:00', '11:30', '13:30', '15:00', '16:30'],
+                stations: [
+                    { name: 'Station 1 (German Specialist Bay)', type: 'Class 4 MOT Bay', slotDuration: 40, status: 'Approved', requestedAt: new Date('2026-02-10'), approvedAt: new Date('2026-02-10'), isActive: true },
+                    { name: 'Station 2 (Performance Diagnostics Bay)', type: 'Class 4/7 MOT Bay', slotDuration: 40, status: 'Approved', requestedAt: new Date('2026-02-10'), approvedAt: new Date('2026-02-10'), isActive: true }
+                ],
+                slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
                     { name: 'DVLA Approval Certificate', fileUrl: '/uploads/prestige_dvla_cert.pdf', uploadDate: new Date('2026-02-10') }
                 ],
@@ -121,7 +129,10 @@ async function seedDatabase() {
                     { name: 'MOT', price: 39, duration: 45, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true }
                 ],
                 workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-                slots: ['09:00', '10:30', '13:00', '14:30', '16:00'],
+                stations: [
+                    { name: 'Main MOT Station', type: 'Class 4 MOT Bay', slotDuration: 45, status: 'Approved', requestedAt: new Date('2026-08-10'), approvedAt: new Date('2026-08-10'), isActive: true }
+                ],
+                slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
                     { name: 'Government MOT License Registration', fileUrl: '/uploads/cornerstone_mot_lic.pdf', uploadDate: new Date('2026-08-10') }
                 ],
