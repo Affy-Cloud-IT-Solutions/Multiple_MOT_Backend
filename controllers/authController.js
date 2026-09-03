@@ -40,12 +40,21 @@ async function customerLogin(req, res) {
       details: `${user.username} logged in successfully as customer.`
     });
 
+    // Resolve customer full name if available
+    let displayName = user.username;
+    if (user.customerId) {
+      const cust = await Customer.findById(user.customerId);
+      if (cust) {
+        displayName = `${cust.firstName} ${cust.lastName}`.trim();
+      }
+    }
+
     res.json({
       message: 'Login successful.',
       token,
       user: {
         id: user._id,
-        name: user.username,
+        name: displayName || user.username,
         email: user.email,
         role: user.role,
         customerId: user.customerId,
@@ -275,9 +284,17 @@ async function getProfile(req, res) {
       return res.status(404).json({ error: 'User profile not found.' });
     }
     
+    let displayName = user.username;
+    if (user.customerId) {
+      const cust = await Customer.findById(user.customerId);
+      if (cust) {
+        displayName = `${cust.firstName} ${cust.lastName}`.trim();
+      }
+    }
+
     res.json({
       id: user._id.toString(),
-      name: user.username,
+      name: displayName || user.username,
       email: user.email,
       role: user.role,
       ...(user.customerId && { customerId: user.customerId.toString() })

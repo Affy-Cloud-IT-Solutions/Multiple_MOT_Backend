@@ -5,16 +5,29 @@ const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
 const jwt = require('jsonwebtoken');
 
+const DEFAULT_GARAGE_IMAGES = [
+  'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+  'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+  'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+  'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop'
+];
+
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  return { ...obj, id: (obj._id || obj.id || '').toString() };
+  const images = (obj.images && obj.images.length > 0) ? obj.images : DEFAULT_GARAGE_IMAGES;
+  return { 
+    ...obj, 
+    id: (obj._id || obj.id || '').toString(),
+    images,
+    logoUrl: obj.logoUrl || images[0]
+  };
 };
 
 // 1. Register a new garage and its owner account in one step
 async function registerGarage(req, res) {
   try {
-    const { name, address, phone, email, description, ownerName, ownerEmail, ownerPassword } = req.body;
+    const { name, address, phone, email, description, ownerName, ownerEmail, ownerPassword, logoUrl, images } = req.body;
 
     if (!name || !address || !ownerName || !ownerEmail || !ownerPassword) {
       return res.status(400).json({ error: 'Garage details and owner account information are required.' });
@@ -33,6 +46,8 @@ async function registerGarage(req, res) {
       phone: phone || '',
       email: email ? email.toLowerCase() : ownerEmail.toLowerCase(),
       description: description || '',
+      logoUrl: logoUrl || '',
+      images: Array.isArray(images) ? images : (images ? [images] : []),
       status: 'Pending', // requires superadmin approval
       verificationStatus: 'Pending',
       rating: 5.0, // default rating
@@ -145,7 +160,7 @@ async function getGarageById(req, res) {
 // 4. Update garage services, slots, working hours, profile (Garage Owner)
 async function updateGarage(req, res) {
   try {
-    const { name, address, phone, email, description, services, workingDays, slots, blockedSlots } = req.body;
+    const { name, address, phone, email, description, services, workingDays, slots, blockedSlots, logoUrl, images } = req.body;
     const garageId = req.params.id;
 
     // Authorization check: Only Platform Admin or the specific Garage Owner can edit
@@ -167,6 +182,8 @@ async function updateGarage(req, res) {
     if (workingDays) garage.workingDays = workingDays;
     if (slots) garage.slots = slots;
     if (blockedSlots) garage.blockedSlots = blockedSlots;
+    if (logoUrl !== undefined) garage.logoUrl = logoUrl;
+    if (images !== undefined) garage.images = Array.isArray(images) ? images : [images];
 
     await garage.save();
 
@@ -560,7 +577,7 @@ async function getGarageSlots(req, res) {
     const totalCapacityPerSlot = approvedStations.length;
     const todayBookingsSummary = [];
 
-    const computedSlots = standardSlots.map(time => {
+    const computedSlots = standardSlots.map((time, slotIndex) => {
       const slotMins = timeToMinutes(time);
 
       // Check if slot is blocked in garage.blockedSlots
@@ -604,6 +621,7 @@ async function getGarageSlots(req, res) {
 
         const bookingDetail = {
           id: b._id.toString(),
+          slotNumber: b.slotNumber || (slotIndex + 1),
           slotTime: time,
           // Until approved by garage admin or staff, do NOT show name in slots
           customerName: isApproved ? rawCustName : 'Pending Approval',
@@ -622,9 +640,10 @@ async function getGarageSlots(req, res) {
       const endTime = getSlotEndTime(time);
 
       return {
+        slotNumber: slotIndex + 1,
         time,
         endTime,
-        slotLabel: `${time} - ${endTime}`,
+        slotLabel: `Slot #${slotIndex + 1} (${time} - ${endTime})`,
         slotDuration: 45,
         totalCapacity: totalCapacityPerSlot,
         bookedCount,

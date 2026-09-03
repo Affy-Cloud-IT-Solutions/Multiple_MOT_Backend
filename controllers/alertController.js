@@ -156,6 +156,19 @@ async function createAlert(req, res) {
         }
       }
 
+      let computedSlotNumber = req.body.slotNumber;
+      if (!computedSlotNumber && normalizedSlotTime) {
+        const standardSlots = [
+          '08:30', '09:15', '10:00', '10:45',
+          '11:30', '12:15', '13:00', '13:45',
+          '14:30', '15:15', '16:00', '16:45'
+        ];
+        const slotIndex = standardSlots.indexOf(normalizedSlotTime);
+        if (slotIndex !== -1) {
+          computedSlotNumber = slotIndex + 1;
+        }
+      }
+
       const existingAlert = await Alert.findOne({
         type: 'BOOKED',
         registrationNumber: registrationNumber.toUpperCase().trim(),
@@ -171,6 +184,7 @@ async function createAlert(req, res) {
         existingAlert.duration = duration || existingAlert.duration;
         existingAlert.status = status || 'Pending';
         existingAlert.slotTime = normalizedSlotTime || existingAlert.slotTime;
+        if (computedSlotNumber) existingAlert.slotNumber = computedSlotNumber;
         if (assignedStationId) existingAlert.stationId = assignedStationId;
         if (assignedStationName) existingAlert.stationName = assignedStationName;
         existingAlert.date = bookingDate;
@@ -190,6 +204,19 @@ async function createAlert(req, res) {
       }
     }
 
+    let computedSlotNumber = req.body.slotNumber;
+    if (!computedSlotNumber && normalizedSlotTime) {
+      const standardSlots = [
+        '08:30', '09:15', '10:00', '10:45',
+        '11:30', '12:15', '13:00', '13:45',
+        '14:30', '15:15', '16:00', '16:45'
+      ];
+      const slotIndex = standardSlots.indexOf(normalizedSlotTime);
+      if (slotIndex !== -1) {
+        computedSlotNumber = slotIndex + 1;
+      }
+    }
+
     const newAlert = await Alert.create({
       type,
       customerName,
@@ -198,6 +225,7 @@ async function createAlert(req, res) {
       stationId: assignedStationId,
       stationName: assignedStationName,
       slotTime: normalizedSlotTime,
+      slotNumber: computedSlotNumber,
       registrationNumber,
       makeModel,
       serviceName,

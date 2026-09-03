@@ -27,6 +27,9 @@ const AlertSchema = new mongoose.Schema({
     slotTime: {
         type: String // e.g. "10:00" or "10:00 - 10:45"
     },
+    slotNumber: {
+        type: Number // e.g. 1, 2, 3...
+    },
     serviceName: {
         type: String
     },
