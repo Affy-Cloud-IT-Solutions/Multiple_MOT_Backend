@@ -52,7 +52,7 @@ The server will start listening at: `http://localhost:5000`.
 | **`/api/customers/search`**| `GET` | Yes | Query customers by text or filter by preferred contact/status. |
 | **`/api/customers/:id`** | `GET` | Yes | Get a single customer with their vehicles. |
 | **`/api/vehicles`** | `POST` | Yes | Add a new vehicle profile. |
-| **`/api/vehicles/dvla/:vrn`**| `GET` | Yes | Query mock DVLA stats for a license plate number. |
+| **`/api/vehicles/dvla/:vrn`**| `GET` | No | Query live DVLA stats for a license plate number without requiring auth. |
 | **`/api/reminders/logs`** | `GET` | Yes | List sent reminders logs history. |
 | **`/api/reminders/templates`**| `GET` / `PUT` | Yes | Retrieve or modify reminder template configurations. |
 | **`/api/reminders/trigger-cron`**| `POST` | Yes | Manually trigger a daily scan for MOT expiry matching. |

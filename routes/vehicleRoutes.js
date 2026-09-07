@@ -3,8 +3,8 @@ const router = express.Router();
 const vehicleController = require('../controllers/vehicleController');
 const authMiddleware = require('../middleware/auth');
 
-// DVLA lookup (accessible by authenticated users, e.g. when checking on main dashboard)
-router.get('/dvla/:vrn', authMiddleware, vehicleController.lookupDVLA);
+// DVLA lookup (accessible publicly without authentication)
+router.get('/dvla/:vrn', vehicleController.lookupDVLA);
 
 router.get('/makes', authMiddleware, vehicleController.getMakes);
 router.get('/models', authMiddleware, vehicleController.getModels);
