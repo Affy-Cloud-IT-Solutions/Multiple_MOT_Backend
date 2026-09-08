@@ -343,22 +343,21 @@ async function seedDatabase() {
 
         console.log('📝 Seeding Templates...');
         await Template.create({
-            t45: "Dear [Name], Your [Vehicle] ([Reg]) MOT expires on [Expiry]. Book your MOT today.",
-            t30: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due in 30 days ([Expiry]). Book now.",
-            t7: "URGENT: Dear [Name], Your [Vehicle] ([Reg]) MOT expires in 7 days on [Expiry]. Book immediately to avoid fines."
+            motDue: "Dear [Name], Your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today under the DVSA 30-day early renewal window.",
+            t30: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today."
         });
 
         console.log('📊 Seeding Audits...');
         await Audit.create([
             {
                 date: new Date('2026-07-20T09:00:00Z'),
-                activity: 'Reminder Sent (45 Days)',
-                details: 'Reminder 1 sent to John Doe for MITSUBISHI OUTLANDER (GK17UTO) via SMS'
+                activity: 'Reminder Sent (MOT Due)',
+                details: 'MOT Due Reminder sent to John Doe for MITSUBISHI OUTLANDER (GK17UTO) via SMS'
             },
             {
                 date: new Date('2026-07-21T09:00:00Z'),
-                activity: 'Reminder Sent (7 Days)',
-                details: 'Reminder 3 sent to Sarah Jenkins for VOLKSWAGEN GOLF (CU15XZG) via Email'
+                activity: 'Reminder Sent (MOT Due)',
+                details: 'MOT Due Reminder sent to Sarah Jenkins for VOLKSWAGEN GOLF (CU15XZG) via Email'
             }
         ]);
 
@@ -366,7 +365,7 @@ async function seedDatabase() {
         await Reminder.create([
             {
                 vehicleId: vehicleDocs[0]._id,
-                reminderType: '45_Days',
+                reminderType: 'MOT_Due',
                 reminderDate: new Date('2026-07-11'),
                 sentStatus: true,
                 sentTimestamp: new Date('2026-07-11T09:00:00Z'),
@@ -374,7 +373,7 @@ async function seedDatabase() {
             },
             {
                 vehicleId: vehicleDocs[1]._id,
-                reminderType: '30_Days',
+                reminderType: 'MOT_Due',
                 reminderDate: new Date('2026-06-29'),
                 sentStatus: true,
                 sentTimestamp: new Date('2026-06-29T09:00:00Z'),

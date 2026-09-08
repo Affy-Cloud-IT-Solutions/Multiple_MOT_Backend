@@ -409,7 +409,7 @@ async function updateGarageDocumentStatus(req, res) {
     }
 
     const { id, docId } = req.params;
-    const { status } = req.body; // 'Verified' | 'Rejected' | 'Pending'
+    const { status, rejectionReason } = req.body; // 'Verified' | 'Rejected' | 'Pending'
 
     if (!['Verified', 'Rejected', 'Pending'].includes(status)) {
       return res.status(400).json({ error: 'Invalid document status.' });
@@ -420,22 +420,35 @@ async function updateGarageDocumentStatus(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
-    const doc = garage.verificationDocuments.id(docId);
+    const doc = (garage.verificationDocuments.id && garage.verificationDocuments.id(docId)) || 
+                garage.verificationDocuments.find(d => (d._id && d._id.toString() === docId) || d.id === docId || d._id === docId);
     if (!doc) {
       return res.status(404).json({ error: 'Verification document not found.' });
     }
 
     doc.status = status;
+    if (status === 'Rejected') {
+      doc.rejectionReason = rejectionReason || 'Document rejected. Please re-upload a clear and valid copy.';
+      doc.verifiedAt = undefined;
+    } else if (status === 'Verified') {
+      doc.rejectionReason = '';
+      doc.verifiedAt = new Date();
+    } else {
+      doc.rejectionReason = '';
+      doc.verifiedAt = undefined;
+    }
+
     await garage.save();
 
     await Audit.create({
       activity: 'Garage Document Verified',
-      details: `Document "${doc.name}" for garage "${garage.name}" updated to "${status}".`
+      details: `Document "${doc.name}" for garage "${garage.name}" updated to "${status}"${doc.rejectionReason ? ` (Reason: ${doc.rejectionReason})` : ''}.`
     });
 
     res.json({
       message: `Document "${doc.name}" status updated to ${status}.`,
-      garage: formatDoc(garage)
+      garage: formatDoc(garage),
+      document: doc
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -874,6 +887,104 @@ async function getGarageSlots(req, res) {
   }
 }
 
+// 13. Public status check for garage applicants
+async function checkGarageStatusByEmail(req, res) {
+  try {
+    const { email } = req.params;
+    if (!email) {
+      return res.status(400).json({ error: 'Email parameter is required.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let garage = await Garage.findOne({ email: cleanEmail });
+    if (!garage) {
+      const user = await User.findOne({ email: cleanEmail });
+      if (user && user.garageId) {
+        garage = await Garage.findById(user.garageId);
+      }
+    }
+
+    if (!garage) {
+      return res.json({ hasGarage: false, message: 'No garage application found for this email.' });
+    }
+
+    const rejectedDocuments = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
+
+    res.json({
+      hasGarage: true,
+      garageId: garage._id,
+      garageName: garage.name,
+      status: garage.status,
+      verificationStatus: garage.verificationStatus,
+      rejectionReason: garage.rejectionReason,
+      hasRejections: rejectedDocuments.length > 0 || garage.status === 'Rejected',
+      rejectedDocuments,
+      verificationDocuments: garage.verificationDocuments || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// 14. Garage Admin resubmits a rejected verification document with a clean/new copy
+async function resubmitGarageDocument(req, res) {
+  try {
+    const { id, docId } = req.params;
+    const { newFileUrl, name } = req.body;
+
+    if (!newFileUrl) {
+      return res.status(400).json({ error: 'New document file URL or path is required.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    const doc = (garage.verificationDocuments.id && garage.verificationDocuments.id(docId)) ||
+                garage.verificationDocuments.find(d => (d._id && d._id.toString() === docId) || d.id === docId || d._id === docId);
+
+    if (!doc) {
+      return res.status(404).json({ error: 'Verification document not found.' });
+    }
+
+    // Update document with new copy and reset status to Pending
+    doc.fileUrl = newFileUrl;
+    if (name && name.trim()) {
+      doc.name = name.trim();
+    }
+    doc.status = 'Pending';
+    doc.rejectionReason = '';
+    doc.uploadDate = new Date();
+    doc.verifiedAt = undefined;
+
+    // Reset garage status to Pending review if it was rejected
+    if (garage.status === 'Rejected') {
+      garage.status = 'Pending';
+      garage.verificationStatus = 'Pending';
+    }
+
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Document Re-submitted',
+      details: `Garage "${garage.name}" re-submitted document "${doc.name}" after addressing previous rejection feedback. Now pending review.`
+    });
+
+    const remainingRejected = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
+
+    res.json({
+      message: `Document "${doc.name}" re-submitted successfully and is now pending Super Admin review.`,
+      garage: formatDoc(garage),
+      document: doc,
+      remainingRejectedCount: remainingRejected.length,
+      hasRejections: remainingRejected.length > 0
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   registerGarage,
   getGarages,
@@ -886,5 +997,7 @@ module.exports = {
   unblockGarageSlot,
   addGarageStation,
   updateGarageStationStatus,
-  getGarageSlots
+  getGarageSlots,
+  checkGarageStatusByEmail,
+  resubmitGarageDocument
 };

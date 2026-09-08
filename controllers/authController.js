@@ -102,11 +102,20 @@ async function adminLogin(req, res) {
         return res.status(403).json({ error: 'Associated garage not found. Please register or contact support.' });
       }
 
+      const rejectedDocs = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
+
       if (garage.status === 'Pending') {
         return res.status(403).json({ 
-          error: 'Your garage application is currently pending approval by the Platform Super Admin. You will be able to log in once your facility photos and MOT authorization documentation are approved.',
+          error: rejectedDocs.length > 0 
+            ? `Action Required: ${rejectedDocs.length} verification document(s) were rejected by Super Admin. Please re-upload updated copies.`
+            : 'Your garage application is currently pending approval by the Platform Super Admin. You will be able to log in once your facility photos and MOT authorization documentation are approved.',
           status: 'Pending',
-          garageName: garage.name
+          garageId: garage._id,
+          garageName: garage.name,
+          verificationStatus: garage.verificationStatus,
+          rejectionReason: garage.rejectionReason,
+          rejectedDocuments: rejectedDocs,
+          verificationDocuments: garage.verificationDocuments
         });
       }
 
@@ -115,8 +124,12 @@ async function adminLogin(req, res) {
         return res.status(403).json({ 
           error: `Your garage application was rejected by the Platform Super Admin.${reasonText}`,
           status: 'Rejected',
+          garageId: garage._id,
+          garageName: garage.name,
+          verificationStatus: garage.verificationStatus,
           rejectionReason: garage.rejectionReason || 'Documentation or verification requirements not met.',
-          garageName: garage.name
+          rejectedDocuments: rejectedDocs,
+          verificationDocuments: garage.verificationDocuments
         });
       }
 
@@ -131,7 +144,11 @@ async function adminLogin(req, res) {
       if (garage.status !== 'Approved') {
         return res.status(403).json({ 
           error: `Garage status is currently "${garage.status}". Super Admin approval is required before you can log in.`,
-          status: garage.status
+          status: garage.status,
+          garageId: garage._id,
+          garageName: garage.name,
+          rejectedDocuments: rejectedDocs,
+          verificationDocuments: garage.verificationDocuments
         });
       }
     }

@@ -97,7 +97,7 @@ const INITIAL_REMINDERS = [
   {
     id: "r1",
     vehicleId: "v1",
-    reminderType: "45-Day Reminder",
+    reminderType: "MOT_Due",
     reminderDate: "2026-07-11",
     sentStatus: "Sent",
     sentTimestamp: "2026-07-11 09:00"
@@ -105,7 +105,7 @@ const INITIAL_REMINDERS = [
   {
     id: "r2",
     vehicleId: "v2",
-    reminderType: "30-Day Reminder",
+    reminderType: "MOT_Due",
     reminderDate: "2026-06-29",
     sentStatus: "Sent",
     sentTimestamp: "2026-06-29 09:00"
@@ -129,21 +129,20 @@ const INITIAL_AUDITS = [
   {
     id: "au1",
     date: "2026-07-20 09:00",
-    activity: "Reminder Sent (45 Days)",
-    details: "Reminder 1 sent to John Doe for FORD FOCUS (AB18 CDE) via SMS"
+    activity: "Reminder Sent (MOT Due)",
+    details: "MOT Due Reminder sent to John Doe for FORD FOCUS (AB18 CDE) via SMS"
   },
   {
     id: "au2",
     date: "2026-07-21 09:00",
-    activity: "Reminder Sent (7 Days)",
-    details: "Reminder 3 sent to Sarah Jenkins for VAUXHALL CORSA (LD65 XYZ) via Email"
+    activity: "Reminder Sent (MOT Due)",
+    details: "MOT Due Reminder sent to Sarah Jenkins for VAUXHALL CORSA (LD65 XYZ) via Email"
   }
 ];
 
 const INITIAL_TEMPLATES = {
-  t45: "Dear [Name], Your [Vehicle] ([Reg]) MOT expires on [Expiry]. Book your MOT today.",
-  t30: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due in 30 days ([Expiry]). Book now.",
-  t7: "URGENT: Dear [Name], Your [Vehicle] ([Reg]) MOT expires in 7 days on [Expiry]. Book immediately to avoid fines."
+  motDue: "Dear [Name], Your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today under the DVSA 30-day early renewal window.",
+  t30: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today."
 };
 
 module.exports = {

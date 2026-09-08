@@ -48,8 +48,10 @@ async function getDashboardStats(req, res) {
         vehiclesSold: soldVehiclesCount,
         bookedMots: totalBookings,
         totalAudits,
-        dueIn7Days: 0,
         dueIn30Days: 0,
+        dueForMot: 0,
+        overdue: 0,
+        dueIn7Days: 0,
         dueIn45Days: 0
       });
     }
@@ -92,27 +94,26 @@ async function getDashboardStats(req, res) {
     const soldCount = await Vehicle.countDocuments({ ...vehicleQuery, status: 'Sold' });
     const bookedCount = await Alert.countDocuments(alertQuery);
 
-    let due7 = 0;
     let due30 = 0;
-    let due45 = 0;
+    let overdueCount = 0;
 
     activeVehicles.forEach(v => {
       const diff = getDaysDiff(v.motExpiryDate, '2026-07-22');
-      if (diff >= 0 && diff <= 7) {
-        due7++;
-      } else if (diff > 7 && diff <= 30) {
+      if (diff >= 0 && diff <= 30) {
         due30++;
-      } else if (diff > 30 && diff <= 45) {
-        due45++;
+      } else if (diff < 0) {
+        overdueCount++;
       }
     });
 
     res.json({
       totalCustomers: customerCount,
       activeVehicles: activeVehicles.length,
-      dueIn7Days: due7,
       dueIn30Days: due30,
-      dueIn45Days: due45,
+      dueForMot: due30,
+      overdue: overdueCount,
+      dueIn7Days: 0,
+      dueIn45Days: 0,
       vehiclesSold: soldCount,
       bookedMots: bookedCount,
       totalAudits: auditCount

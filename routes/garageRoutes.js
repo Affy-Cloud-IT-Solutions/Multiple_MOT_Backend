@@ -3,8 +3,10 @@ const router = express.Router();
 const garageController = require('../controllers/garageController');
 const authMiddleware = require('../middleware/auth');
 
-// Public route for onboarding/registration
+// Public route for onboarding/registration & application status checks
 router.post('/register', garageController.registerGarage);
+router.get('/check-status/:email', garageController.checkGarageStatusByEmail);
+router.put('/:id/documents/:docId/resubmit', garageController.resubmitGarageDocument);
 
 // Authenticated routes
 router.get('/', authMiddleware.optional, garageController.getGarages);

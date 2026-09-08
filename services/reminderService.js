@@ -25,21 +25,20 @@ async function runDailyCheck() {
     if (!customer) continue;
 
     const daysLeft = getDaysDiff(vehicle.motExpiryDate, '2026-07-22');
-    let template = '';
-    let reminderType = '';
+    
+    // In accordance with UK DVSA 30-day rule, MOT reminders are sent when vehicle is within 30 days of expiry
+    if (daysLeft >= 0 && daysLeft <= 30) {
+      // Check if already sent a reminder within last 30 days for this vehicle
+      const existingReminder = await Reminder.findOne({
+        vehicleId: vehicle._id,
+        sentStatus: true,
+        reminderDate: { $gte: new Date('2026-06-22') }
+      });
+      if (existingReminder) continue;
 
-    if (daysLeft === 45) {
-      template = templates.t45;
-      reminderType = '45-Day Reminder';
-    } else if (daysLeft === 30) {
-      template = templates.t30;
-      reminderType = '30-Day Reminder';
-    } else if (daysLeft === 7) {
-      template = templates.t7;
-      reminderType = '7-Day Reminder';
-    }
+      const template = templates.motDue || templates.t30 || "Dear [Name], Your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today.";
+      const reminderType = 'MOT Due Reminder (Within 30 Days)';
 
-    if (template && reminderType) {
       // Format template content
       const customerName = `${customer.firstName} ${customer.lastName}`;
       const vehicleDesc = `${vehicle.make} ${vehicle.model}`;
@@ -59,7 +58,7 @@ async function runDailyCheck() {
 
       // Dispatch communication depending on preference
       if (customer.preferredContact === 'Email') {
-        sendEmail(customer.email, `MOT Reminder: ${vehicle.registrationNumber}`, message);
+        sendEmail(customer.email, `MOT Due Reminder: ${vehicle.registrationNumber}`, message);
       } else {
         // SMS or WhatsApp
         sendSMS(customer.mobile, message);
@@ -68,7 +67,7 @@ async function runDailyCheck() {
       // Record reminder entry in MongoDB
       await Reminder.create({
         vehicleId: vehicle._id,
-        reminderType: daysLeft === 45 ? '45_Days' : daysLeft === 30 ? '30_Days' : '7_Days',
+        reminderType: 'MOT_Due',
         reminderDate: new Date('2026-07-22'),
         sentStatus: true,
         sentTimestamp: new Date(),
@@ -77,7 +76,7 @@ async function runDailyCheck() {
 
       // Append to audit logs in MongoDB
       await Audit.create({
-        activity: `Reminder Sent (${daysLeft} Days)`,
+        activity: `Reminder Sent (MOT Due - ${daysLeft}d left)`,
         details: `Automated ${reminderType} sent to ${customerName} for ${vehicleDesc} (${vehicle.registrationNumber}) via ${customer.preferredContact}`
       });
 

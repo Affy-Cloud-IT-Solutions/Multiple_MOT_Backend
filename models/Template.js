@@ -1,20 +1,22 @@
 const mongoose = require('mongoose');
 
 const TemplateSchema = new mongoose.Schema({
-    t45: {
+    motDue: {
         type: String,
         required: true,
-        default: "Dear [Name], Your [Vehicle] ([Reg]) MOT expires on [Expiry]. Book your MOT today."
+        default: "Dear [Name], Your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today under the DVSA 30-day early renewal window."
     },
     t30: {
         type: String,
-        required: true,
-        default: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due in 30 days ([Expiry]). Book now."
+        default: "Dear [Name], Just a reminder that your [Vehicle] ([Reg]) MOT is due for renewal on [Expiry]. Book your MOT today."
+    },
+    t45: {
+        type: String,
+        default: ""
     },
     t7: {
         type: String,
-        required: true,
-        default: "URGENT: Dear [Name], Your [Vehicle] ([Reg]) MOT expires in 7 days on [Expiry]. Book immediately to avoid fines."
+        default: ""
     }
 }, {
     timestamps: true

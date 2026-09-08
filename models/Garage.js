@@ -113,8 +113,10 @@ const GarageSchema = new mongoose.Schema({
     verificationDocuments: [{
         name: { type: String, required: true },
         fileUrl: { type: String, required: true },
-        documentType: { type: String, default: 'MOT Certificate' }, // 'MOT Certificate', 'Public Liability Insurance', 'Trade Licence', etc.
+        documentType: { type: String, default: 'MOT Certificate' },
         status: { type: String, enum: ['Pending', 'Verified', 'Rejected'], default: 'Pending' },
+        rejectionReason: { type: String, default: '' },
+        verifiedAt: { type: Date },
         uploadDate: { type: Date, default: Date.now }
     }],
     verificationDate: {

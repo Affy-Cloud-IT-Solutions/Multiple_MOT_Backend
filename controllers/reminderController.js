@@ -49,26 +49,33 @@ async function getTemplates(req, res) {
 
 async function updateTemplate(req, res) {
   try {
-    const { t45, t30, t7 } = req.body;
+    const { motDue, template: singleTemplate, t45, t30, t7 } = req.body;
 
     let template = await Template.findOne({});
     if (!template) {
       template = new Template({});
     }
 
-    if (t45 !== undefined) template.t45 = t45;
+    if (motDue !== undefined) {
+      template.motDue = motDue;
+      template.t30 = motDue;
+    } else if (singleTemplate !== undefined) {
+      template.motDue = singleTemplate;
+      template.t30 = singleTemplate;
+    }
     if (t30 !== undefined) template.t30 = t30;
+    if (t45 !== undefined) template.t45 = t45;
     if (t7 !== undefined) template.t7 = t7;
 
     await template.save();
 
     await Audit.create({
       activity: 'Templates Updated',
-      details: 'Garage administrator updated reminder scheduling templates.'
+      details: 'Garage administrator updated MOT reminder template.'
     });
 
     res.json({
-      message: 'Templates updated successfully.',
+      message: 'Template updated successfully.',
       templates: formatDoc(template)
     });
   } catch (error) {
