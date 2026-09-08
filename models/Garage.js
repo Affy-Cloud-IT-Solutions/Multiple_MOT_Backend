@@ -19,6 +19,46 @@ const GarageSchema = new mongoose.Schema({
         required: [true, 'Garage address is required'],
         trim: true
     },
+    city: {
+        type: String,
+        default: 'London',
+        trim: true
+    },
+    postcode: {
+        type: String,
+        default: '',
+        trim: true
+    },
+    latitude: {
+        type: Number,
+        default: 51.5074
+    },
+    longitude: {
+        type: Number,
+        default: -0.1278
+    },
+    vtsNumber: {
+        type: String,
+        default: '', // Vehicle Testing Station (VTS) Site Number (e.g. VTS104928)
+        trim: true
+    },
+    motAuthorisedExaminerNumber: {
+        type: String,
+        default: '', // MOT Authorised Examiner (AE) Number
+        trim: true
+    },
+    businessRegistrationNumber: {
+        type: String,
+        default: '', // Companies House / Trade Reg Number
+        trim: true
+    },
+    legalDeclaration: {
+        type: Boolean,
+        default: false
+    },
+    legalDeclarationDate: {
+        type: Date
+    },
     email: {
         type: String,
         lowercase: true,
@@ -73,6 +113,8 @@ const GarageSchema = new mongoose.Schema({
     verificationDocuments: [{
         name: { type: String, required: true },
         fileUrl: { type: String, required: true },
+        documentType: { type: String, default: 'MOT Certificate' }, // 'MOT Certificate', 'Public Liability Insurance', 'Trade Licence', etc.
+        status: { type: String, enum: ['Pending', 'Verified', 'Rejected'], default: 'Pending' },
         uploadDate: { type: Date, default: Date.now }
     }],
     verificationDate: {
@@ -80,8 +122,12 @@ const GarageSchema = new mongoose.Schema({
     },
     verificationStatus: {
         type: String,
-        enum: ['Pending', 'Verified', 'Expired'],
+        enum: ['Pending', 'Verified', 'Rejected', 'Expired'],
         default: 'Pending'
+    },
+    rejectionReason: {
+        type: String,
+        default: ''
     },
     rating: {
         type: Number,

@@ -6,7 +6,38 @@ const Garage = require('../models/Garage');
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  return { ...obj, id: obj._id.toString() };
+  const id = obj._id.toString();
+
+  let garageInfo = {};
+  if (obj.garageId && typeof obj.garageId === 'object' && obj.garageId._id) {
+    const g = obj.garageId;
+    garageInfo = {
+      garageId: g._id.toString(),
+      garageName: g.name || g.garageName || obj.stationName || 'MOT Testing Station',
+      garageAddress: g.address || '',
+      garageCity: g.city || '',
+      garagePostcode: g.postcode || '',
+      garagePhone: g.phone || '',
+      garageEmail: g.email || '',
+      garageLatitude: g.latitude || (g.location && g.location.coordinates ? g.location.coordinates[1] : null),
+      garageLongitude: g.longitude || (g.location && g.location.coordinates ? g.location.coordinates[0] : null),
+      garage: {
+        id: g._id.toString(),
+        name: g.name || g.garageName,
+        address: g.address,
+        city: g.city,
+        postcode: g.postcode,
+        phone: g.phone,
+        email: g.email,
+        latitude: g.latitude || (g.location && g.location.coordinates ? g.location.coordinates[1] : null),
+        longitude: g.longitude || (g.location && g.location.coordinates ? g.location.coordinates[0] : null),
+        logoUrl: g.logoUrl,
+        rating: g.rating
+      }
+    };
+  }
+
+  return { ...obj, id, ...garageInfo };
 };
 
 async function getAllAlerts(req, res) {
@@ -28,7 +59,9 @@ async function getAllAlerts(req, res) {
         query.garageId = req.query.garageId;
       }
     }
-    const alerts = await Alert.find(query).sort({ createdAt: -1 });
+    const alerts = await Alert.find(query)
+      .populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating')
+      .sort({ createdAt: -1 });
     res.json(alerts.map(formatDoc));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -200,6 +233,7 @@ async function createAlert(req, res) {
           details: detailsStr
         });
 
+        await existingAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
         return res.status(200).json({ message: 'Alert rescheduled successfully.', alert: formatDoc(existingAlert) });
       }
     }
@@ -259,6 +293,7 @@ async function createAlert(req, res) {
       details: auditDetails
     });
 
+    await newAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
     res.status(201).json({ message: 'Alert created successfully.', alert: formatDoc(newAlert) });
   } catch (error) {
     res.status(500).json({ error: error.message });

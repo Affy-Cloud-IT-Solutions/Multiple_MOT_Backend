@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
+const Garage = require('../models/Garage');
 const Audit = require('../models/Audit');
 
 async function customerLogin(req, res) {
@@ -75,7 +76,7 @@ async function adminLogin(req, res) {
     }
 
     // Find user in MongoDB
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
       return res.status(401).json({ error: 'No user found with this email.' });
     }
@@ -89,6 +90,50 @@ async function adminLogin(req, res) {
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // For garage admins and staff, verify garage approval status
+    if (user.role === 'garage_admin' || user.role === 'staff') {
+      if (!user.garageId) {
+        return res.status(403).json({ error: 'No associated garage record found for this account.' });
+      }
+      const garage = await Garage.findById(user.garageId);
+      if (!garage) {
+        return res.status(403).json({ error: 'Associated garage not found. Please register or contact support.' });
+      }
+
+      if (garage.status === 'Pending') {
+        return res.status(403).json({ 
+          error: 'Your garage application is currently pending approval by the Platform Super Admin. You will be able to log in once your facility photos and MOT authorization documentation are approved.',
+          status: 'Pending',
+          garageName: garage.name
+        });
+      }
+
+      if (garage.status === 'Rejected') {
+        const reasonText = garage.rejectionReason ? ` Reason: ${garage.rejectionReason}` : ' Documentation or verification requirements not met.';
+        return res.status(403).json({ 
+          error: `Your garage application was rejected by the Platform Super Admin.${reasonText}`,
+          status: 'Rejected',
+          rejectionReason: garage.rejectionReason || 'Documentation or verification requirements not met.',
+          garageName: garage.name
+        });
+      }
+
+      if (garage.status === 'Blacklisted') {
+        return res.status(403).json({ 
+          error: 'This garage account is currently suspended. Please contact platform support.',
+          status: 'Blacklisted',
+          garageName: garage.name
+        });
+      }
+
+      if (garage.status !== 'Approved') {
+        return res.status(403).json({ 
+          error: `Garage status is currently "${garage.status}". Super Admin approval is required before you can log in.`,
+          status: garage.status
+        });
+      }
     }
 
     // Create JWT Token

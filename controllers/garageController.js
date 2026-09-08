@@ -6,16 +6,21 @@ const Vehicle = require('../models/Vehicle');
 const jwt = require('jsonwebtoken');
 
 const DEFAULT_GARAGE_IMAGES = [
-  'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
-  'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop'
+  'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop', // 1. Exterior
+  'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop', // 2. MOT Bay
+  'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop', // 3. Reception
+  'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop', // 4. Workshop
+  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'  // 5. Diagnostics
 ];
 
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  const images = (obj.images && obj.images.length > 0) ? obj.images : DEFAULT_GARAGE_IMAGES;
+  const images = (obj.images && obj.images.length >= 5) 
+    ? obj.images 
+    : (obj.images && obj.images.length > 0) 
+      ? [...obj.images, ...DEFAULT_GARAGE_IMAGES.slice(obj.images.length, 5)]
+      : DEFAULT_GARAGE_IMAGES;
   return { 
     ...obj, 
     id: (obj._id || obj.id || '').toString(),
@@ -24,60 +29,132 @@ const formatDoc = (doc) => {
   };
 };
 
-// 1. Register a new garage and its owner account in one step
+// 1. Register a new garage and its owner account in one step (3-Step Registration)
 async function registerGarage(req, res) {
   try {
-    const { name, address, phone, email, description, ownerName, ownerEmail, ownerPassword, logoUrl, images } = req.body;
+    const { 
+      name, 
+      address, 
+      city, 
+      postcode, 
+      phone, 
+      email, 
+      description, 
+      openingTime, 
+      closingTime, 
+      workingDays,
+      ownerName, 
+      ownerEmail, 
+      ownerPassword, 
+      logoUrl, 
+      images,
+      latitude,
+      longitude,
+      vtsNumber,
+      motAuthorisedExaminerNumber,
+      businessRegistrationNumber,
+      verificationDocuments,
+      legalDeclaration
+    } = req.body;
 
-    if (!name || !address || !ownerName || !ownerEmail || !ownerPassword) {
-      return res.status(400).json({ error: 'Garage details and owner account information are required.' });
+    const finalGarageName = (name || req.body.garageName || '').trim();
+    const finalEmail = (email || ownerEmail || '').toLowerCase().trim();
+    const finalPhone = (phone || req.body.ownerMobile || req.body.ownerPhone || '').trim();
+    const finalPassword = (ownerPassword || req.body.password || '').trim();
+
+    if (!finalGarageName || !address || !ownerName || !finalEmail || !finalPassword) {
+      return res.status(400).json({ error: 'Garage details, contact email, and owner account password are required.' });
     }
 
     // Check if user email already exists
-    const existingUser = await User.findOne({ email: ownerEmail.toLowerCase().trim() });
+    const existingUser = await User.findOne({ email: finalEmail });
     if (existingUser) {
-      return res.status(400).json({ error: 'A user account with this email already exists.' });
+      return res.status(400).json({ error: 'A user account with this garage email already exists.' });
     }
 
-    // Create Garage
+    // Ensure at least 5 images are present or fallback to defaults
+    let garageImages = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
+    if (garageImages.length < 5) {
+      garageImages = [...garageImages, ...DEFAULT_GARAGE_IMAGES.slice(garageImages.length, 5)];
+    }
+
+    // Format verification docs
+    const formattedDocs = Array.isArray(verificationDocuments) 
+      ? verificationDocuments.map(d => ({
+          name: d.name || 'MOT Bay Authorization',
+          fileUrl: d.fileUrl || '/uploads/mot_cert.pdf',
+          documentType: d.documentType || 'MOT Certificate',
+          uploadDate: new Date()
+        }))
+      : [
+          { name: 'MOT Authorization Certificate', fileUrl: '/uploads/mot_auth.pdf', documentType: 'MOT Certificate', uploadDate: new Date() },
+          { name: 'Public Liability Insurance', fileUrl: '/uploads/liability_insurance.pdf', documentType: 'Public Liability Insurance', uploadDate: new Date() }
+        ];
+
+    // Create Garage in Pending status
     const newGarage = await Garage.create({
-      name,
-      address,
-      phone: phone || '',
-      email: email ? email.toLowerCase() : ownerEmail.toLowerCase(),
+      name: finalGarageName,
+      address: address.trim(),
+      city: (city || 'London').trim(),
+      postcode: (postcode || '').trim(),
+      latitude: Number(latitude) || 51.5074,
+      longitude: Number(longitude) || -0.1278,
+      phone: finalPhone,
+      email: finalEmail,
+      openingTime: openingTime || '08:00',
+      closingTime: closingTime || '18:00',
+      workingDays: Array.isArray(workingDays) && workingDays.length > 0 ? workingDays : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
       description: description || '',
-      logoUrl: logoUrl || '',
-      images: Array.isArray(images) ? images : (images ? [images] : []),
-      status: 'Pending', // requires superadmin approval
+      logoUrl: logoUrl || garageImages[0] || '',
+      images: garageImages,
+      vtsNumber: (vtsNumber || '').trim(),
+      motAuthorisedExaminerNumber: (motAuthorisedExaminerNumber || '').trim(),
+      businessRegistrationNumber: (businessRegistrationNumber || '').trim(),
+      verificationDocuments: formattedDocs,
+      legalDeclaration: Boolean(legalDeclaration),
+      legalDeclarationDate: legalDeclaration ? new Date() : undefined,
+      status: 'Pending', // Strictly Pending until Super Admin approves
       verificationStatus: 'Pending',
-      rating: 5.0, // default rating
-      distance: parseFloat((Math.random() * 8 + 1).toFixed(1)) // mock distance between 1-9 miles
+      rating: 5.0,
+      distance: parseFloat((Math.random() * 8 + 1).toFixed(1))
     });
+
+    // Generate unique username if needed
+    let baseUsername = ownerName.trim();
+    let finalUsername = baseUsername;
+    let userWithSameName = await User.findOne({ username: finalUsername });
+    let counter = 1;
+    while (userWithSameName) {
+      finalUsername = `${baseUsername}_${Math.floor(100 + Math.random() * 900)}`;
+      userWithSameName = await User.findOne({ username: finalUsername });
+    }
 
     // Create User (Garage Admin / Owner)
     const newOwner = await User.create({
-      username: ownerName,
-      email: ownerEmail.toLowerCase().trim(),
-      password: ownerPassword,
+      username: finalUsername,
+      email: finalEmail,
+      password: finalPassword,
       role: 'garage_admin',
       garageId: newGarage._id
     });
 
-    // Create JWT Token for the newly registered garage admin
-    const token = jwt.sign(
-      { userId: newOwner._id, email: newOwner.email, role: newOwner.role, garageId: newGarage._id },
-      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
-      { expiresIn: '24h' }
-    );
-
     await Audit.create({
-      activity: 'Garage Registered',
-      details: `Garage owner registered "${name}" and owner account "${ownerEmail}"`
+      activity: 'Garage Registered (Pending Approval)',
+      details: `Garage owner registered "${newGarage.name}" (VTS: ${newGarage.vtsNumber || 'N/A'}) with owner account "${finalEmail}". Application is pending Platform Super Admin review.`
+    });
+
+    // Create Alert notification for Super Admin
+    await Alert.create({
+      type: 'GARAGE_REGISTRATION',
+      customerName: ownerName,
+      garageId: newGarage._id,
+      status: 'Pending',
+      makeModel: `${newGarage.name} (VTS: ${newGarage.vtsNumber || 'Pending'}) - Awaiting MOT Approval`
     });
 
     res.status(201).json({
-      message: 'Garage registered successfully and pending Platform Admin approval.',
-      token,
+      message: 'Garage application submitted successfully! Your application, 5 facility photos, and MOT testing authorizations are now pending review by the Platform Super Admin. You will receive access once approved.',
+      status: 'Pending',
       user: {
         id: newOwner._id,
         name: newOwner.username,
@@ -160,7 +237,26 @@ async function getGarageById(req, res) {
 // 4. Update garage services, slots, working hours, profile (Garage Owner)
 async function updateGarage(req, res) {
   try {
-    const { name, address, phone, email, description, services, workingDays, slots, blockedSlots, logoUrl, images } = req.body;
+    const { 
+      name, 
+      address, 
+      city, 
+      postcode, 
+      latitude, 
+      longitude, 
+      vtsNumber, 
+      motAuthorisedExaminerNumber, 
+      businessRegistrationNumber,
+      phone, 
+      email, 
+      description, 
+      services, 
+      workingDays, 
+      slots, 
+      blockedSlots, 
+      logoUrl, 
+      images 
+    } = req.body;
     const garageId = req.params.id;
 
     // Authorization check: Only Platform Admin or the specific Garage Owner can edit
@@ -175,6 +271,13 @@ async function updateGarage(req, res) {
 
     if (name) garage.name = name;
     if (address) garage.address = address;
+    if (city !== undefined) garage.city = city;
+    if (postcode !== undefined) garage.postcode = postcode;
+    if (latitude !== undefined) garage.latitude = Number(latitude);
+    if (longitude !== undefined) garage.longitude = Number(longitude);
+    if (vtsNumber !== undefined) garage.vtsNumber = vtsNumber;
+    if (motAuthorisedExaminerNumber !== undefined) garage.motAuthorisedExaminerNumber = motAuthorisedExaminerNumber;
+    if (businessRegistrationNumber !== undefined) garage.businessRegistrationNumber = businessRegistrationNumber;
     if (phone !== undefined) garage.phone = phone;
     if (email) garage.email = email.toLowerCase();
     if (description !== undefined) garage.description = description;
@@ -249,7 +352,7 @@ async function updateGarageStatus(req, res) {
       return res.status(403).json({ error: 'Access Denied. Only Platform Admin can approve or block garages.' });
     }
 
-    const { status, verificationStatus } = req.body;
+    const { status, verificationStatus, rejectionReason } = req.body;
     const garage = await Garage.findById(req.params.id);
     if (!garage) {
       return res.status(404).json({ error: 'Garage not found.' });
@@ -258,22 +361,80 @@ async function updateGarageStatus(req, res) {
     if (status) {
       garage.status = status;
     }
-    if (verificationStatus) {
+
+    if (status === 'Approved') {
+      garage.verificationStatus = 'Verified';
+      garage.verificationDate = new Date();
+      garage.rejectionReason = '';
+      if (Array.isArray(garage.verificationDocuments)) {
+        garage.verificationDocuments.forEach(doc => {
+          doc.status = 'Verified';
+        });
+      }
+    } else if (status === 'Rejected') {
+      garage.verificationStatus = 'Rejected';
+      garage.rejectionReason = rejectionReason || 'Documentation or verification criteria not verified.';
+    } else if (verificationStatus) {
       garage.verificationStatus = verificationStatus;
       if (verificationStatus === 'Verified') {
         garage.verificationDate = new Date();
       }
     }
 
+    if (rejectionReason !== undefined) {
+      garage.rejectionReason = rejectionReason;
+    }
+
     await garage.save();
 
     await Audit.create({
       activity: 'Garage Status Changed',
-      details: `Garage "${garage.name}" status updated to: ${garage.status}, verification: ${garage.verificationStatus}`
+      details: `Garage "${garage.name}" status updated to: ${garage.status}, verification: ${garage.verificationStatus}${garage.rejectionReason ? ` (Reason: ${garage.rejectionReason})` : ''}`
     });
 
     res.json({
       message: 'Garage status updated successfully.',
+      garage: formatDoc(garage)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// 7. Verify or Reject individual verification documents (Super Admin only)
+async function updateGarageDocumentStatus(req, res) {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Access Denied. Only Platform Super Admin can verify documents.' });
+    }
+
+    const { id, docId } = req.params;
+    const { status } = req.body; // 'Verified' | 'Rejected' | 'Pending'
+
+    if (!['Verified', 'Rejected', 'Pending'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid document status.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    const doc = garage.verificationDocuments.id(docId);
+    if (!doc) {
+      return res.status(404).json({ error: 'Verification document not found.' });
+    }
+
+    doc.status = status;
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Document Verified',
+      details: `Document "${doc.name}" for garage "${garage.name}" updated to "${status}".`
+    });
+
+    res.json({
+      message: `Document "${doc.name}" status updated to ${status}.`,
       garage: formatDoc(garage)
     });
   } catch (error) {
@@ -720,6 +881,7 @@ module.exports = {
   updateGarage,
   uploadGarageDocs,
   updateGarageStatus,
+  updateGarageDocumentStatus,
   blockGarageSlot,
   unblockGarageSlot,
   addGarageStation,

@@ -46,11 +46,21 @@ async function seedDatabase() {
                 name: 'Apex MOT & Service Centre',
                 logoUrl: 'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=120&h=120&fit=crop',
                 images: [
-                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop'
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'
                 ],
                 address: '10 Industrial Estate, London Road, London, SE1 7PB',
+                city: 'London',
+                postcode: 'SE1 7PB',
+                latitude: 51.5014,
+                longitude: -0.0910,
+                vtsNumber: 'VTS-104928',
+                motAuthorisedExaminerNumber: 'AE-884920',
+                businessRegistrationNumber: 'GB-9928174',
+                legalDeclaration: true,
                 email: 'info@apexmot.co.uk',
                 phone: '020 7946 0192',
                 openingTime: '08:00',
@@ -68,8 +78,8 @@ async function seedDatabase() {
                 ],
                 slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
-                    { name: 'MOT Test Station License', fileUrl: '/uploads/apex_mot_license.pdf', uploadDate: new Date('2025-08-15') },
-                    { name: 'Public Liability Insurance', fileUrl: '/uploads/apex_liability_insurance.pdf', uploadDate: new Date('2025-08-15') }
+                    { name: 'MOT Test Station License', fileUrl: '/uploads/apex_mot_license.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2025-08-15') },
+                    { name: 'Public Liability Insurance', fileUrl: '/uploads/apex_liability_insurance.pdf', documentType: 'Public Liability Insurance', uploadDate: new Date('2025-08-15') }
                 ],
                 verificationDate: new Date('2025-08-15'),
                 verificationStatus: 'Verified',
@@ -81,11 +91,21 @@ async function seedDatabase() {
                 name: 'Prestige Auto Care',
                 logoUrl: 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=120&h=120&fit=crop',
                 images: [
-                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop'
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'
                 ],
                 address: '88 Station Road, Manchester, M1 2WD',
+                city: 'Manchester',
+                postcode: 'M1 2WD',
+                latitude: 53.4808,
+                longitude: -2.2426,
+                vtsNumber: 'VTS-209148',
+                motAuthorisedExaminerNumber: 'AE-771924',
+                businessRegistrationNumber: 'GB-4401928',
+                legalDeclaration: true,
                 email: 'bookings@prestigeautocare.co.uk',
                 phone: '0161 496 0231',
                 openingTime: '08:30',
@@ -103,7 +123,7 @@ async function seedDatabase() {
                 ],
                 slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
-                    { name: 'DVLA Approval Certificate', fileUrl: '/uploads/prestige_dvla_cert.pdf', uploadDate: new Date('2026-02-10') }
+                    { name: 'DVLA Approval Certificate', fileUrl: '/uploads/prestige_dvla_cert.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2026-02-10') }
                 ],
                 verificationDate: new Date('2026-02-10'),
                 verificationStatus: 'Verified',
@@ -115,11 +135,21 @@ async function seedDatabase() {
                 name: 'Cornerstone Garage',
                 logoUrl: 'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=120&h=120&fit=crop',
                 images: [
-                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=600&h=400&fit=crop',
-                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=600&h=400&fit=crop'
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'
                 ],
                 address: '4 The Mews, Birmingham, B3 2KL',
+                city: 'Birmingham',
+                postcode: 'B3 2KL',
+                latitude: 52.4862,
+                longitude: -1.8904,
+                vtsNumber: 'VTS-391024',
+                motAuthorisedExaminerNumber: 'AE-551029',
+                businessRegistrationNumber: 'GB-1102934',
+                legalDeclaration: true,
                 email: 'contact@cornerstone.co.uk',
                 phone: '0121 496 0544',
                 openingTime: '09:00',
@@ -134,12 +164,12 @@ async function seedDatabase() {
                 ],
                 slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45'],
                 verificationDocuments: [
-                    { name: 'Government MOT License Registration', fileUrl: '/uploads/cornerstone_mot_lic.pdf', uploadDate: new Date('2026-08-10') }
+                    { name: 'Government MOT License Registration', fileUrl: '/uploads/cornerstone_mot_lic.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2026-08-10') }
                 ],
                 verificationDate: new Date('2026-08-10'),
                 verificationStatus: 'Pending',
-                rating: 4.2,
-                distance: 8.1,
+                rating: 4.5,
+                distance: 5.1,
                 status: 'Pending'
             }
         ]);

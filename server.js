@@ -8,6 +8,8 @@ require('dotenv').config();
 const connectDB = require('./config/database');
 const seedDatabase = require('./config/seed');
 
+const path = require('path');
+
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const customerRoutes = require('./routes/customerRoutes');
@@ -19,6 +21,7 @@ const responseRoutes = require('./routes/responseRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 const garageRoutes = require('./routes/garageRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -34,8 +37,11 @@ connectDB().then(() => {
 // MIDDLEWARE
 // ========================================
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Log request information (simple local logging)
 app.use((req, res, next) => {
@@ -56,6 +62,7 @@ app.use('/api/response', responseRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/garages', garageRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // ========================================
 // HEALTH CHECK ENDPOINTS

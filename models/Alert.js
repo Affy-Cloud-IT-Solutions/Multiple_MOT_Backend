@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const AlertSchema = new mongoose.Schema({
     type: {
         type: String,
-        enum: ['NEW_VEHICLE', 'SOLD', 'BOOKED', 'NEW_STATION'],
+        enum: ['NEW_VEHICLE', 'SOLD', 'BOOKED', 'NEW_STATION', 'GARAGE_REGISTRATION'],
         required: true
     },
     customerName: {
