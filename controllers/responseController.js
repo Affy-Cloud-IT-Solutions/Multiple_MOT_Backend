@@ -136,9 +136,13 @@ async function executeAction(req, res) {
         date: date ? new Date(date) : Date.now()
       });
 
+      await Customer.findByIdAndUpdate(customer._id, {
+        $addToSet: { garageIds: garageId }
+      }).catch(err => console.error('[responseController] failed to link customer to garage:', err));
+
       await Audit.create({
         activity: 'MOT Booking Requested',
-        details: `${customerName} requested MOT booking for ${makeModel} (${vehicle.registrationNumber}) via portal.`
+        details: `${customerName} requested MOT booking for ${makeModel} (${vehicle.registrationNumber}) via Token Link.`
       });
 
       return res.json({ message: 'MOT booking request successfully sent to garage.', alert: formatDoc(newAlert) });

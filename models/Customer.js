@@ -30,9 +30,20 @@ const CustomerSchema = new mongoose.Schema({
         type: String,
         enum: ['SMS', 'Email', 'WhatsApp'],
         default: 'SMS'
-    }
+    },
+    garageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Garage'
+    },
+    garageIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Garage'
+    }]
 }, {
     timestamps: true
 });
+
+CustomerSchema.index({ garageId: 1 });
+CustomerSchema.index({ garageIds: 1 });
 
 module.exports = mongoose.model('Customer', CustomerSchema);

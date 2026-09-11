@@ -58,9 +58,19 @@ async function getDashboardStats(req, res) {
 
     if (role === 'garage_admin' || role === 'staff') {
       const garageAlerts = await Alert.find({ garageId }).select('customerId');
-      const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
-      vehicleQuery.customerId = { $in: customerIds };
-      customerCount = customerIds.length;
+      const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+      
+      const garageCustomers = await Customer.find({
+        $or: [
+          { garageId },
+          { garageIds: garageId },
+          { _id: { $in: alertCustomerIds } }
+        ]
+      }).select('_id');
+      
+      const allCustomerIds = garageCustomers.map(c => c._id);
+      vehicleQuery.customerId = { $in: allCustomerIds };
+      customerCount = allCustomerIds.length;
       alertQuery.garageId = garageId;
       
       // Count matching audits

@@ -100,6 +100,21 @@ function generateExcelReport(res, filename, sheetName, headers, displayHeaders, 
   res.send(buf);
 }
 
+async function getGarageCustomerIds(role, garageId) {
+  if (role !== 'garage_admin' && role !== 'staff') return null;
+  if (!garageId) return [];
+  const garageAlerts = await Alert.find({ garageId }).select('customerId');
+  const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+  const garageCustomers = await Customer.find({
+    $or: [
+      { garageId },
+      { garageIds: garageId },
+      { _id: { $in: alertCustomerIds } }
+    ]
+  }).select('_id');
+  return garageCustomers.map(c => c._id);
+}
+
 // Helper to check if MOT is due soon
 async function getMOTDueReportData(req) {
   const role = req.user?.role;
@@ -107,9 +122,8 @@ async function getMOTDueReportData(req) {
   const { startDate, endDate } = req.query;
 
   let vehicleQuery = { status: 'Active' };
-  if (role === 'garage_admin' || role === 'staff') {
-    const garageAlerts = await Alert.find({ garageId }).select('customerId');
-    const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+  const customerIds = await getGarageCustomerIds(role, garageId);
+  if (customerIds !== null) {
     vehicleQuery.customerId = { $in: customerIds };
   }
 
@@ -125,7 +139,7 @@ async function getMOTDueReportData(req) {
 
   return vehicles.map(v => {
     const customer = customers.find(c => c._id.toString() === v.customerId.toString());
-    const daysLeft = getDaysDiff(v.motExpiryDate, '2026-07-22');
+    const daysLeft = getDaysDiff(v.motExpiryDate, new Date());
     return {
       registrationNumber: v.registrationNumber,
       make: v.make,
@@ -144,9 +158,8 @@ async function getReminderSentReportData(req) {
   const { startDate, endDate } = req.query;
 
   let vehicleQuery = {};
-  if (role === 'garage_admin' || role === 'staff') {
-    const garageAlerts = await Alert.find({ garageId }).select('customerId');
-    const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+  const customerIds = await getGarageCustomerIds(role, garageId);
+  if (customerIds !== null) {
     vehicleQuery.customerId = { $in: customerIds };
   }
 
@@ -206,14 +219,22 @@ async function getCustomerResponseReportData(req) {
 
   // Filter logs associated with the garage's customer names or garage name
   if (role === 'garage_admin' || role === 'staff') {
+    const customerIds = await getGarageCustomerIds(role, garageId);
+    const garageCustomers = customerIds ? await Customer.find({ _id: { $in: customerIds } }).select('firstName lastName') : [];
+    const customerNames = garageCustomers.map(c => `${c.firstName} ${c.lastName}`.toLowerCase());
+    
     const garageAlerts = await Alert.find({ garageId }).select('customerName');
-    const customerNames = [...new Set(garageAlerts.filter(a => a.customerName).map(a => a.customerName.toLowerCase()))];
+    garageAlerts.forEach(a => {
+      if (a.customerName) customerNames.push(a.customerName.toLowerCase());
+    });
+    
+    const uniqueCustomerNames = [...new Set(customerNames)];
     const garageObj = await Garage.findById(garageId);
     const garageName = garageObj ? garageObj.name.toLowerCase() : '';
 
     return audits.filter(au => {
       const detailsLower = au.details.toLowerCase();
-      const matchCustomer = customerNames.some(name => detailsLower.includes(name));
+      const matchCustomer = uniqueCustomerNames.some(name => detailsLower.includes(name));
       const matchGarage = garageName ? detailsLower.includes(garageName) : false;
       return matchCustomer || matchGarage;
     }).map(au => ({

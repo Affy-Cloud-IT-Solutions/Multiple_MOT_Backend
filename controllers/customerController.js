@@ -17,10 +17,14 @@ async function getAllCustomers(req, res) {
     let query = {};
     if (filterGarageId) {
       const garageAlerts = await Alert.find({ garageId: filterGarageId }).select('customerId');
-      const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
-      query._id = { $in: customerIds };
+      const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+      query.$or = [
+        { garageId: filterGarageId },
+        { garageIds: filterGarageId },
+        { _id: { $in: alertCustomerIds } }
+      ];
     }
-    const customers = await Customer.find(query);
+    const customers = await Customer.find(query).sort({ createdAt: -1 });
     res.json(customers.map(formatDoc));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -48,6 +52,8 @@ async function getCustomerById(req, res) {
 async function createCustomer(req, res) {
   try {
     const { firstName, lastName, email, mobile, preferredContact = 'SMS', address } = req.body;
+    const role = req.user?.role;
+    const garageId = req.body.garageId || (role === 'garage_admin' || role === 'staff' ? req.user?.garageId : null);
 
     if (!firstName || !email || !mobile) {
       return res.status(400).json({ error: 'First name, email, and mobile are required.' });
@@ -61,19 +67,44 @@ async function createCustomer(req, res) {
       return res.status(400).json({ error: 'Invalid mobile number format.' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     // Check if email already registered as customer
-    const existing = await Customer.findOne({ email: email.toLowerCase() });
+    let existing = await Customer.findOne({ email: cleanEmail });
     if (existing) {
+      if (garageId) {
+        const gIdStr = garageId.toString();
+        const hasGarage = (existing.garageIds && existing.garageIds.some(g => g.toString() === gIdStr)) ||
+                          (existing.garageId && existing.garageId.toString() === gIdStr);
+        if (!hasGarage) {
+          if (!existing.garageIds) existing.garageIds = [];
+          existing.garageIds.push(garageId);
+          if (!existing.garageId) existing.garageId = garageId;
+          await existing.save();
+        }
+
+        await Audit.create({
+          activity: 'Customer Linked to Garage',
+          details: `Linked existing customer ${existing.firstName} ${existing.lastName} (${cleanEmail}) to garage.`
+        });
+
+        return res.status(200).json({
+          message: 'Existing customer profile linked to your garage successfully.',
+          customer: formatDoc(existing)
+        });
+      }
+
       return res.status(400).json({ error: 'Customer with this email already exists.' });
     }
 
     const newCustomer = await Customer.create({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      mobile,
+      firstName: firstName.trim(),
+      lastName: (lastName || '').trim(),
+      email: cleanEmail,
+      mobile: mobile.trim(),
       preferredContact,
-      address
+      address: address ? address.trim() : undefined,
+      garageId: garageId || undefined,
+      garageIds: garageId ? [garageId] : []
     });
 
     await Audit.create({
@@ -92,7 +123,7 @@ async function createCustomer(req, res) {
 
 async function updateCustomer(req, res) {
   try {
-    const { firstName, lastName, email, mobile, preferredContact, address } = req.body;
+    const { firstName, lastName, email, mobile, preferredContact, address, garageId } = req.body;
 
     if (email && !isValidEmail(email)) {
       return res.status(400).json({ error: 'Invalid email format.' });
@@ -113,6 +144,13 @@ async function updateCustomer(req, res) {
     if (mobile) customer.mobile = mobile;
     if (preferredContact) customer.preferredContact = preferredContact;
     if (address !== undefined) customer.address = address;
+    if (garageId) {
+      if (!customer.garageIds) customer.garageIds = [];
+      if (!customer.garageIds.some(g => g.toString() === garageId.toString())) {
+        customer.garageIds.push(garageId);
+      }
+      if (!customer.garageId) customer.garageId = garageId;
+    }
 
     await customer.save();
 
@@ -159,9 +197,14 @@ async function searchCustomers(req, res) {
 
     let customerQuery = {};
     if (role === 'garage_admin' || role === 'staff') {
-      const garageAlerts = await Alert.find({ garageId: req.user.garageId }).select('customerId');
-      const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
-      customerQuery._id = { $in: customerIds };
+      const gId = req.user?.garageId;
+      const garageAlerts = await Alert.find({ garageId: gId }).select('customerId');
+      const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+      customerQuery.$or = [
+        { garageId: gId },
+        { garageIds: gId },
+        { _id: { $in: alertCustomerIds } }
+      ];
     }
 
     const customers = await Customer.find(customerQuery);

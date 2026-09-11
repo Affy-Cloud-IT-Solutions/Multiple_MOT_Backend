@@ -1,5 +1,6 @@
 const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
+const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const Garage = require('../models/Garage');
 
@@ -233,6 +234,12 @@ async function createAlert(req, res) {
           details: detailsStr
         });
 
+        if (customerId && targetGarageId) {
+          await Customer.findByIdAndUpdate(customerId, {
+            $addToSet: { garageIds: targetGarageId }
+          }).catch(err => console.error('[alertController] failed to link customer to garage:', err));
+        }
+
         await existingAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
         return res.status(200).json({ message: 'Alert rescheduled successfully.', alert: formatDoc(existingAlert) });
       }
@@ -268,6 +275,12 @@ async function createAlert(req, res) {
       status: status || 'Pending',
       date: bookingDate
     });
+
+    if (customerId && targetGarageId) {
+      await Customer.findByIdAndUpdate(customerId, {
+        $addToSet: { garageIds: targetGarageId }
+      }).catch(err => console.error('[alertController] failed to link customer to garage:', err));
+    }
 
     let auditActivity = 'Notification Received';
     let auditDetails = `Received alert of type ${type} for customer ${customerName}`;
