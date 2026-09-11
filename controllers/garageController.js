@@ -792,15 +792,15 @@ async function getGarageSlots(req, res) {
         const custObj = b.customerId && typeof b.customerId === 'object' ? b.customerId : null;
         const isApproved = b.status === 'Approved';
         const rawCustName = b.customerName || (custObj ? `${custObj.firstName} ${custObj.lastName}` : 'Customer');
+        const isStaffOrAdmin = req.user?.role === 'admin' || req.user?.role === 'garage_admin' || req.user?.role === 'staff';
 
         const bookingDetail = {
           id: b._id.toString(),
           slotNumber: b.slotNumber || (slotIndex + 1),
           slotTime: time,
-          // Until approved by garage admin or staff, do NOT show name in slots
-          customerName: isApproved ? rawCustName : 'Pending Approval',
-          customerMobile: isApproved ? (custObj?.mobile || '') : '',
-          customerEmail: isApproved ? (custObj?.email || '') : '',
+          customerName: (isStaffOrAdmin || isApproved) ? rawCustName : 'Booked',
+          customerMobile: (isStaffOrAdmin || isApproved) ? (custObj?.mobile || '') : '',
+          customerEmail: (isStaffOrAdmin || isApproved) ? (custObj?.email || '') : '',
           registrationNumber: b.registrationNumber || '',
           makeModel: b.makeModel || '',
           serviceName: b.serviceName || 'MOT Test',
@@ -844,15 +844,15 @@ async function getGarageSlots(req, res) {
       const assignedStationName = b.stationName || (approvedStations[idx % approvedStations.length]?.name) || `Bay ${(idx % Math.max(1, approvedStations.length)) + 1}`;
       const custObj = b.customerId && typeof b.customerId === 'object' ? b.customerId : null;
       const isApproved = b.status === 'Approved';
+      const isStaffOrAdmin = req.user?.role === 'admin' || req.user?.role === 'garage_admin' || req.user?.role === 'staff';
       const rawCustName = b.customerName || (custObj ? `${custObj.firstName} ${custObj.lastName}` : 'Customer');
 
       return {
         id: b._id.toString(),
         slotTime: matchedSlot || (b.date && b.date.getHours() ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'Flexible MOT Slot'),
-        // Until approved by garage admin or staff, do NOT show name in slots
-        customerName: isApproved ? rawCustName : 'Pending Approval',
-        customerMobile: isApproved ? (custObj?.mobile || '') : '',
-        customerEmail: isApproved ? (custObj?.email || '') : '',
+        customerName: (isStaffOrAdmin || isApproved) ? rawCustName : (b.customerName || 'Customer'),
+        customerMobile: (isStaffOrAdmin || isApproved) ? (custObj?.mobile || '') : (custObj?.mobile || ''),
+        customerEmail: (isStaffOrAdmin || isApproved) ? (custObj?.email || '') : (custObj?.email || ''),
         registrationNumber: b.registrationNumber || '',
         makeModel: b.makeModel || '',
         serviceName: b.serviceName || 'MOT Test',

@@ -12,7 +12,7 @@ async function seedDatabase() {
         // Check if data already exists to prevent re-seeding
         const userCount = await User.countDocuments();
         if (userCount > 0) {
-            console.log('🌱 Database already seeded. Skipping initialization.');
+            console.log('🌱 Database already seeded. Verifying registered garages...');
             
             // Ensure super admin exists
             const superAdmin = await User.findOne({ email: 'admin@gmail.com' });
@@ -24,6 +24,107 @@ async function seedDatabase() {
                     password: '123456',
                     role: 'admin'
                 });
+            }
+
+            // Ensure key registered UK garages exist for testing
+            const registeredGaragesCount = await Garage.countDocuments({ status: 'Approved' });
+            if (registeredGaragesCount < 4) {
+                console.log('🏢 Seeding missing approved UK registered garages for location testing...');
+                const sampleGarages = [
+                    {
+                        name: 'Apex MOT & Service Centre',
+                        address: '10 Industrial Estate, London Road, London, SE1 7PB',
+                        city: 'London',
+                        postcode: 'SE1 7PB',
+                        latitude: 51.5014,
+                        longitude: -0.0910,
+                        vtsNumber: 'VTS-104928',
+                        motAuthorisedExaminerNumber: 'AE-884920',
+                        businessRegistrationNumber: 'GB-9928174',
+                        legalDeclaration: true,
+                        email: 'info@apexmot.co.uk',
+                        phone: '020 7946 0192',
+                        rating: 4.8,
+                        status: 'Approved'
+                    },
+                    {
+                        name: 'Prestige Auto Care',
+                        address: '88 Station Road, Manchester, M1 2WD',
+                        city: 'Manchester',
+                        postcode: 'M1 2WD',
+                        latitude: 53.4808,
+                        longitude: -2.2426,
+                        vtsNumber: 'VTS-209148',
+                        motAuthorisedExaminerNumber: 'AE-771924',
+                        businessRegistrationNumber: 'GB-4401928',
+                        legalDeclaration: true,
+                        email: 'bookings@prestigeautocare.co.uk',
+                        phone: '0161 496 0231',
+                        rating: 4.6,
+                        status: 'Approved'
+                    },
+                    {
+                        name: 'Cornerstone Garage',
+                        address: '4 The Mews, Great Charles St, Birmingham, B3 2KL',
+                        city: 'Birmingham',
+                        postcode: 'B3 2KL',
+                        latitude: 52.4862,
+                        longitude: -1.8904,
+                        vtsNumber: 'VTS-391024',
+                        motAuthorisedExaminerNumber: 'AE-551029',
+                        businessRegistrationNumber: 'GB-1102934',
+                        legalDeclaration: true,
+                        email: 'contact@cornerstone.co.uk',
+                        phone: '0121 496 0544',
+                        rating: 4.7,
+                        status: 'Approved'
+                    },
+                    {
+                        name: 'Camden & North London MOT Bay',
+                        address: '14 Chalk Farm Road, Camden, London, NW1 8NH',
+                        city: 'London',
+                        postcode: 'NW1 8NH',
+                        latitude: 51.5414,
+                        longitude: -0.1444,
+                        vtsNumber: 'VTS-449102',
+                        motAuthorisedExaminerNumber: 'AE-992014',
+                        businessRegistrationNumber: 'GB-8819201',
+                        legalDeclaration: true,
+                        email: 'camden@northlondonmot.co.uk',
+                        phone: '020 7485 9920',
+                        rating: 4.9,
+                        status: 'Approved'
+                    },
+                    {
+                        name: 'Yorkshire Master Auto & MOT',
+                        address: '5 Wellington St, Leeds, LS1 4DY',
+                        city: 'Leeds',
+                        postcode: 'LS1 4DY',
+                        latitude: 53.7968,
+                        longitude: -1.5489,
+                        vtsNumber: 'VTS-882019',
+                        motAuthorisedExaminerNumber: 'AE-330192',
+                        businessRegistrationNumber: 'GB-6610294',
+                        legalDeclaration: true,
+                        email: 'contact@yorkshiremastermot.co.uk',
+                        phone: '0113 496 0199',
+                        rating: 4.8,
+                        status: 'Approved'
+                    }
+                ];
+
+                for (const g of sampleGarages) {
+                    const exists = await Garage.findOne({ name: g.name });
+                    if (!exists) {
+                        await Garage.create(g);
+                    } else if (exists.status !== 'Approved' || !exists.latitude) {
+                        exists.status = 'Approved';
+                        exists.latitude = g.latitude;
+                        exists.longitude = g.longitude;
+                        exists.postcode = g.postcode;
+                        await exists.save();
+                    }
+                }
             }
             return;
         }
@@ -141,7 +242,7 @@ async function seedDatabase() {
                     'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop',
                     'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'
                 ],
-                address: '4 The Mews, Birmingham, B3 2KL',
+                address: '4 The Mews, Great Charles St, Birmingham, B3 2KL',
                 city: 'Birmingham',
                 postcode: 'B3 2KL',
                 latitude: 52.4862,
@@ -154,9 +255,10 @@ async function seedDatabase() {
                 phone: '0121 496 0544',
                 openingTime: '09:00',
                 closingTime: '17:00',
-                description: 'Local family-run service garage catering to all makes and models for over 15 years.',
+                description: 'Local family-run service garage catering to all makes and models for over 15 years with fast turnaround MOTs.',
                 services: [
-                    { name: 'MOT', price: 39, duration: 45, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true }
+                    { name: 'MOT', price: 39, duration: 45, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true },
+                    { name: 'Oil & Filter Change', price: 55, duration: 45, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true }
                 ],
                 workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
                 stations: [
@@ -167,10 +269,94 @@ async function seedDatabase() {
                     { name: 'Government MOT License Registration', fileUrl: '/uploads/cornerstone_mot_lic.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2026-08-10') }
                 ],
                 verificationDate: new Date('2026-08-10'),
-                verificationStatus: 'Pending',
-                rating: 4.5,
-                distance: 5.1,
-                status: 'Pending'
+                verificationStatus: 'Verified',
+                rating: 4.7,
+                distance: 1.1,
+                status: 'Approved'
+            },
+            {
+                name: 'Camden & North London MOT Bay',
+                logoUrl: 'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=120&h=120&fit=crop',
+                images: [
+                    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'
+                ],
+                address: '14 Chalk Farm Road, Camden, London, NW1 8NH',
+                city: 'London',
+                postcode: 'NW1 8NH',
+                latitude: 51.5414,
+                longitude: -0.1444,
+                vtsNumber: 'VTS-449102',
+                motAuthorisedExaminerNumber: 'AE-992014',
+                businessRegistrationNumber: 'GB-8819201',
+                legalDeclaration: true,
+                email: 'camden@northlondonmot.co.uk',
+                phone: '020 7485 9920',
+                openingTime: '08:00',
+                closingTime: '18:30',
+                description: 'Convenient North London MOT testing center. Class 4 testing, brake tests, and pre-MOT health checks.',
+                services: [
+                    { name: 'MOT', price: 44, duration: 40, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], isActive: true },
+                    { name: 'Major Service', price: 160, duration: 180, availability: ['Monday', 'Wednesday', 'Friday'], isActive: true }
+                ],
+                workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+                stations: [
+                    { name: 'Bay 1 (Class 4)', type: 'Class 4 MOT Bay', slotDuration: 40, status: 'Approved', requestedAt: new Date('2026-01-15'), approvedAt: new Date('2026-01-15'), isActive: true }
+                ],
+                slots: ['08:00', '08:45', '09:30', '10:15', '11:00', '11:45', '12:30', '13:15', '14:00', '14:45', '15:30', '16:15', '17:00'],
+                verificationDocuments: [
+                    { name: 'DVSA Testing Authority', fileUrl: '/uploads/camden_dvsa.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2026-01-15') }
+                ],
+                verificationDate: new Date('2026-01-15'),
+                verificationStatus: 'Verified',
+                rating: 4.9,
+                distance: 3.4,
+                status: 'Approved'
+            },
+            {
+                name: 'Yorkshire Master Auto & MOT',
+                logoUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=120&h=120&fit=crop',
+                images: [
+                    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop',
+                    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop'
+                ],
+                address: '5 Wellington St, Leeds, LS1 4DY',
+                city: 'Leeds',
+                postcode: 'LS1 4DY',
+                latitude: 53.7968,
+                longitude: -1.5489,
+                vtsNumber: 'VTS-882019',
+                motAuthorisedExaminerNumber: 'AE-330192',
+                businessRegistrationNumber: 'GB-6610294',
+                legalDeclaration: true,
+                email: 'contact@yorkshiremastermot.co.uk',
+                phone: '0113 496 0199',
+                openingTime: '08:30',
+                closingTime: '17:30',
+                description: 'Trusted Leeds city center MOT testing center. Friendly technicians and comprehensive diagnostic bay.',
+                services: [
+                    { name: 'MOT', price: 42, duration: 45, availability: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], isActive: true },
+                    { name: 'Air Con Regas & MOT Combo', price: 85, duration: 60, availability: ['Monday', 'Tuesday', 'Thursday'], isActive: true }
+                ],
+                workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+                stations: [
+                    { name: 'Leeds MOT Bay', type: 'Class 4 MOT Bay', slotDuration: 45, status: 'Approved', requestedAt: new Date('2026-03-01'), approvedAt: new Date('2026-03-01'), isActive: true }
+                ],
+                slots: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00'],
+                verificationDocuments: [
+                    { name: 'DVSA Leeds Certification', fileUrl: '/uploads/leeds_dvsa.pdf', documentType: 'MOT Certificate', uploadDate: new Date('2026-03-01') }
+                ],
+                verificationDate: new Date('2026-03-01'),
+                verificationStatus: 'Verified',
+                rating: 4.8,
+                distance: 1.8,
+                status: 'Approved'
             }
         ]);
 

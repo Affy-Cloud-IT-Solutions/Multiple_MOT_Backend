@@ -60,6 +60,19 @@ async function getAllAlerts(req, res) {
         query.garageId = req.query.garageId;
       }
     }
+
+    // Auto-complete any past MOT bookings whose date has elapsed
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    await Alert.updateMany(
+      {
+        type: 'BOOKED',
+        date: { $lt: today },
+        status: { $in: ['Pending', 'Approved'] }
+      },
+      { $set: { status: 'Completed' } }
+    );
+
     const alerts = await Alert.find(query)
       .populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating')
       .sort({ createdAt: -1 });

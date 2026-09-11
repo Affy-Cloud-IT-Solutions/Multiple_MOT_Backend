@@ -11,7 +11,35 @@ const formatDoc = (doc) => {
 
 async function getAllVehicles(req, res) {
   try {
-    const vehicles = await Vehicle.find({});
+    const role = req.user?.role;
+    let query = {};
+
+    if (role === 'customer') {
+      if (!req.user?.customerId) {
+        return res.json([]);
+      }
+      query.customerId = req.user.customerId;
+    } else if (req.query.customerId) {
+      query.customerId = req.query.customerId;
+    } else if (role === 'garage_admin' || role === 'staff') {
+      const garageId = req.user?.garageId;
+      if (garageId) {
+        const Alert = require('../models/Alert');
+        const garageAlerts = await Alert.find({ garageId }).select('customerId');
+        const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+        const garageCustomers = await Customer.find({
+          $or: [
+            { garageId },
+            { garageIds: garageId },
+            { _id: { $in: alertCustomerIds } }
+          ]
+        }).select('_id');
+        const custIds = garageCustomers.map(c => c._id);
+        query.customerId = { $in: custIds };
+      }
+    }
+
+    const vehicles = await Vehicle.find(query).sort({ createdAt: -1 });
     res.json(vehicles.map(formatDoc));
   } catch (error) {
     res.status(500).json({ error: error.message });
