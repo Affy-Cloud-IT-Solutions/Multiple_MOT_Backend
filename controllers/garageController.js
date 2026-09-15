@@ -4,6 +4,11 @@ const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
 const jwt = require('jsonwebtoken');
+const { 
+  sendGarageRegistrationEmail, 
+  sendSuperAdminNewGarageAlert, 
+  sendGarageStatusEmail 
+} = require('../services/emailService');
 
 const DEFAULT_GARAGE_IMAGES = [
   'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop', // 1. Exterior
@@ -151,6 +156,14 @@ async function registerGarage(req, res) {
       status: 'Pending',
       makeModel: `${newGarage.name} (VTS: ${newGarage.vtsNumber || 'Pending'}) - Awaiting MOT Approval`
     });
+
+    // Send confirmation email to Garage applicant and alert email to Super Admin
+    sendGarageRegistrationEmail(newGarage, newOwner).catch(err => 
+      console.error('[garageController] Failed to send garage registration email:', err.message)
+    );
+    sendSuperAdminNewGarageAlert(newGarage).catch(err => 
+      console.error('[garageController] Failed to send super admin alert email:', err.message)
+    );
 
     res.status(201).json({
       message: 'Garage application submitted successfully! Your application, 5 facility photos, and MOT testing authorizations are now pending review by the Platform Super Admin. You will receive access once approved.',
@@ -391,6 +404,13 @@ async function updateGarageStatus(req, res) {
       activity: 'Garage Status Changed',
       details: `Garage "${garage.name}" status updated to: ${garage.status}, verification: ${garage.verificationStatus}${garage.rejectionReason ? ` (Reason: ${garage.rejectionReason})` : ''}`
     });
+
+    // Notify garage via email on status update (Approved / Rejected)
+    if (status === 'Approved' || status === 'Rejected') {
+      sendGarageStatusEmail(garage, status, garage.rejectionReason).catch(err =>
+        console.error('[garageController] Failed to send garage status email:', err.message)
+      );
+    }
 
     res.json({
       message: 'Garage status updated successfully.',

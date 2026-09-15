@@ -4,7 +4,7 @@ const Template = require('../models/Template');
 const Reminder = require('../models/Reminder');
 const Audit = require('../models/Audit');
 const { getDaysDiff } = require('../utils/helpers');
-const { sendEmail } = require('./emailService');
+const { sendEmail, sendMotDueReminderEmail } = require('./emailService');
 const { sendSMS } = require('./smsService');
 
 async function runDailyCheck() {
@@ -58,7 +58,9 @@ async function runDailyCheck() {
 
       // Dispatch communication depending on preference
       if (customer.preferredContact === 'Email') {
-        sendEmail(customer.email, `MOT Due Reminder: ${vehicle.registrationNumber}`, message);
+        sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryFormatted, serviceLink).catch(err =>
+          console.error('[reminderService] Failed to dispatch MOT due reminder email:', err.message)
+        );
       } else {
         // SMS or WhatsApp
         sendSMS(customer.mobile, message);

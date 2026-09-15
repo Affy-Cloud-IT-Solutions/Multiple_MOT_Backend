@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Customer = require('../models/Customer');
 const Garage = require('../models/Garage');
 const Audit = require('../models/Audit');
+const { sendCustomerWelcomeEmail } = require('../services/emailService');
 
 async function customerLogin(req, res) {
   try {
@@ -201,20 +202,21 @@ async function signup(req, res) {
     const finalRole = 'customer';
     let customerId = null;
 
+    let createdCustomer = null;
     // Create Customer profile
     if (finalRole === 'customer') {
       const parts = name.trim().split(' ');
       const firstName = parts[0];
       const lastName = parts.slice(1).join(' ') || '';
 
-      const customer = await Customer.create({
+      createdCustomer = await Customer.create({
         firstName,
         lastName,
         email: emailLower,
         mobile: mobile || 'N/A',
         preferredContact: 'Email' // default
       });
-      customerId = customer._id;
+      customerId = createdCustomer._id;
     }
 
     const newUser = await User.create({
@@ -224,6 +226,12 @@ async function signup(req, res) {
       role: finalRole,
       customerId
     });
+
+    if (createdCustomer) {
+      sendCustomerWelcomeEmail(createdCustomer).catch(err => 
+        console.error('[authController] Failed to send customer welcome email:', err.message)
+      );
+    }
 
     await Audit.create({
       activity: 'User Signup',

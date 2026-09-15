@@ -3,6 +3,13 @@ const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const Garage = require('../models/Garage');
+const {
+  sendBookingRequestEmailCustomer,
+  sendBookingRequestEmailGarage,
+  sendBookingConfirmedEmail,
+  sendBookingRejectedEmail,
+  sendVehicleApprovalEmail
+} = require('../services/emailService');
 
 const formatDoc = (doc) => {
   if (!doc) return null;
@@ -320,6 +327,27 @@ async function createAlert(req, res) {
     });
 
     await newAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
+
+    // Async Email Notifications for MOT Bookings
+    if (type === 'BOOKED') {
+      (async () => {
+        try {
+          const cust = customerId ? await Customer.findById(customerId) : null;
+          const gar = newAlert.garageId;
+          if (cust && gar) {
+            sendBookingRequestEmailCustomer(newAlert, cust, gar).catch(err =>
+              console.error('[alertController] Failed to send customer booking request email:', err.message)
+            );
+            sendBookingRequestEmailGarage(newAlert, cust, gar).catch(err =>
+              console.error('[alertController] Failed to send garage booking request email:', err.message)
+            );
+          }
+        } catch (e) {
+          console.error('[alertController] Error dispatching booking creation emails:', e.message);
+        }
+      })();
+    }
+
     res.status(201).json({ message: 'Alert created successfully.', alert: formatDoc(newAlert) });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -386,6 +414,20 @@ async function approveAlert(req, res) {
           details: `Approved & registered new vehicle ${newVehicle.make} ${newVehicle.model} (${newVehicle.registrationNumber})`
         });
       }
+
+      // Email notification to customer about vehicle approval
+      if (alert.customerId) {
+        Customer.findById(alert.customerId).then(customer => {
+          if (customer) {
+            sendVehicleApprovalEmail(customer, {
+              registrationNumber: alert.registrationNumber,
+              make: make.toUpperCase(),
+              model: model.toUpperCase(),
+              motExpiryDate: alert.motExpiryDate
+            }, 'Approved').catch(err => console.error('[alertController] Error sending vehicle approval email:', err.message));
+          }
+        }).catch(err => console.error('[alertController] Customer lookup failed for vehicle approval email:', err.message));
+      }
     } else if (alert.type === 'SOLD') {
       // Find vehicle by registration and mark as Sold
       const vehicle = await Vehicle.findOne({ registrationNumber: alert.registrationNumber });
@@ -402,6 +444,21 @@ async function approveAlert(req, res) {
         activity: 'MOT Booked',
         details: `Confirmed MOT booking approval for ${alert.makeModel} (${alert.registrationNumber})`
       });
+
+      // Email notification to customer about booking confirmation
+      (async () => {
+        try {
+          const cust = alert.customerId ? await Customer.findById(alert.customerId) : null;
+          const gar = alert.garageId ? await Garage.findById(alert.garageId) : null;
+          if (cust) {
+            sendBookingConfirmedEmail(alert, cust, gar).catch(err =>
+              console.error('[alertController] Failed to send booking confirmation email:', err.message)
+            );
+          }
+        } catch (e) {
+          console.error('[alertController] Error dispatching booking confirmation email:', e.message);
+        }
+      })();
     }
 
     res.json({ message: 'Alert approved successfully.', alert: formatDoc(alert) });
@@ -440,6 +497,16 @@ async function acknowledgeAlert(req, res) {
           activity: 'Vehicle Registration Rejected',
           details: `Rejected vehicle registration request for ${alert.makeModel} (${alert.registrationNumber})`
         });
+
+        if (alert.customerId) {
+          Customer.findById(alert.customerId).then(customer => {
+            if (customer) {
+              sendVehicleApprovalEmail(customer, vehicle, 'Rejected', 'Vehicle verification rejected by garage').catch(err =>
+                console.error('[alertController] Error sending vehicle rejection email:', err.message)
+              );
+            }
+          }).catch(err => console.error('[alertController] Customer lookup failed for rejection email:', err.message));
+        }
       }
     }
 
@@ -485,11 +552,38 @@ async function rejectAlert(req, res) {
           details: `Rejected vehicle registration request for ${alert.makeModel} (${alert.registrationNumber}). Reason: ${reason || 'None provided'}`
         });
       }
-    } else {
+
+      if (alert.customerId) {
+        Customer.findById(alert.customerId).then(customer => {
+          if (customer) {
+            sendVehicleApprovalEmail(customer, {
+              registrationNumber: alert.registrationNumber,
+              makeModel: alert.makeModel
+            }, 'Rejected', alert.rejectionReason).catch(err =>
+              console.error('[alertController] Error sending vehicle rejection email:', err.message)
+            );
+          }
+        }).catch(err => console.error('[alertController] Customer lookup failed for rejection email:', err.message));
+      }
+    } else if (alert.type === 'BOOKED') {
       await Audit.create({
         activity: 'MOT Booking Rejected',
         details: `Rejected booking request for ${alert.makeModel} (${alert.registrationNumber}). Reason: ${reason || 'None provided'}`
       });
+
+      (async () => {
+        try {
+          const cust = alert.customerId ? await Customer.findById(alert.customerId) : null;
+          const gar = alert.garageId ? await Garage.findById(alert.garageId) : null;
+          if (cust) {
+            sendBookingRejectedEmail(alert, cust, gar, alert.rejectionReason).catch(err =>
+              console.error('[alertController] Failed to send booking rejection email:', err.message)
+            );
+          }
+        } catch (e) {
+          console.error('[alertController] Error dispatching booking rejection email:', e.message);
+        }
+      })();
     }
 
     res.json({ message: 'Alert rejected successfully.', alert: formatDoc(alert) });
