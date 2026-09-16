@@ -8,7 +8,7 @@ const ReminderSchema = new mongoose.Schema({
     },
     reminderType: {
         type: String,
-        enum: ['MOT_Due', '30_Days', 'Overdue', '45_Days', '7_Days'],
+        enum: ['MOT_Due', '45_Days', '30_Days', '15_Days', '7_Days', 'Expired', 'Overdue'],
         default: 'MOT_Due',
         required: true
     },

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+// Environment variables
 require('dotenv').config();
 
 // Import MongoDB connection
@@ -155,9 +156,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ========================================
-// START SERVER
-// ========================================
+const { runDailyCheck } = require('./services/reminderService');
 
 app.listen(PORT, () => {
   console.log(`===============================================`);
@@ -165,6 +164,15 @@ app.listen(PORT, () => {
   console.log(`  Listening on Port: http://localhost:${PORT}   `);
   console.log(`  Health Check: http://localhost:${PORT}/api/health`);
   console.log(`===============================================`);
+
+  // Run initial reminder check 10 seconds after startup, then every 24 hours
+  setTimeout(() => {
+    runDailyCheck().catch(err => console.error('[REMINDER ENGINE] Startup check error:', err));
+  }, 10000);
+
+  setInterval(() => {
+    runDailyCheck().catch(err => console.error('[REMINDER ENGINE] Daily interval check error:', err));
+  }, 24 * 60 * 60 * 1000);
 });
 
-module.exports = app; // For testing
+module.exports = app; // For testing

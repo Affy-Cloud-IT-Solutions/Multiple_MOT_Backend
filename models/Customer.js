@@ -38,7 +38,14 @@ const CustomerSchema = new mongoose.Schema({
     garageIds: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Garage'
-    }]
+    }],
+    garageConsent: {
+        type: Boolean,
+        default: false
+    },
+    garageConsentDate: {
+        type: Date
+    }
 }, {
     timestamps: true
 });

@@ -187,7 +187,7 @@ async function adminLogin(req, res) {
 
 async function signup(req, res) {
   try {
-    const { name, email, password, mobile } = req.body;
+    const { name, email, password, mobile, garageConsent } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
     }
@@ -201,6 +201,8 @@ async function signup(req, res) {
     // Public signup is strictly for customers only
     const finalRole = 'customer';
     let customerId = null;
+    const consentAgreed = Boolean(garageConsent);
+    const consentDate = consentAgreed ? new Date() : null;
 
     let createdCustomer = null;
     // Create Customer profile
@@ -214,7 +216,9 @@ async function signup(req, res) {
         lastName,
         email: emailLower,
         mobile: mobile || 'N/A',
-        preferredContact: 'Email' // default
+        preferredContact: 'Email', // default
+        garageConsent: consentAgreed,
+        garageConsentDate: consentDate
       });
       customerId = createdCustomer._id;
     }
@@ -224,7 +228,9 @@ async function signup(req, res) {
       email: emailLower,
       password, // hooks will hash
       role: finalRole,
-      customerId
+      customerId,
+      garageConsent: consentAgreed,
+      garageConsentDate: consentDate
     });
 
     if (createdCustomer) {
@@ -235,7 +241,7 @@ async function signup(req, res) {
 
     await Audit.create({
       activity: 'User Signup',
-      details: `New user registered: ${name} (${emailLower}) as ${finalRole}`
+      details: `New user registered: ${name} (${emailLower}) as ${finalRole} (Garage Data Sharing Consent: ${consentAgreed ? 'Granted' : 'Declined'})`
     });
 
     res.status(201).json({
@@ -245,7 +251,9 @@ async function signup(req, res) {
         name: newUser.username,
         email: newUser.email,
         role: newUser.role,
-        customerId: newUser.customerId
+        customerId: newUser.customerId,
+        garageConsent: newUser.garageConsent,
+        garageConsentDate: newUser.garageConsentDate
       }
     });
   } catch (error) {

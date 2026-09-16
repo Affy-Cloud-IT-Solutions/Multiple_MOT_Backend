@@ -51,7 +51,7 @@ async function getCustomerById(req, res) {
 
 async function createCustomer(req, res) {
   try {
-    const { firstName, lastName, email, mobile, preferredContact = 'SMS', address } = req.body;
+    const { firstName, lastName, email, mobile, preferredContact = 'SMS', address, garageConsent } = req.body;
     const role = req.user?.role;
     const garageId = req.body.garageId || (role === 'garage_admin' || role === 'staff' ? req.user?.garageId : null);
 
@@ -96,6 +96,7 @@ async function createCustomer(req, res) {
       return res.status(400).json({ error: 'Customer with this email already exists.' });
     }
 
+    const consentAgreed = Boolean(garageConsent);
     const newCustomer = await Customer.create({
       firstName: firstName.trim(),
       lastName: (lastName || '').trim(),
@@ -104,7 +105,9 @@ async function createCustomer(req, res) {
       preferredContact,
       address: address ? address.trim() : undefined,
       garageId: garageId || undefined,
-      garageIds: garageId ? [garageId] : []
+      garageIds: garageId ? [garageId] : [],
+      garageConsent: consentAgreed,
+      garageConsentDate: consentAgreed ? new Date() : null
     });
 
     await Audit.create({
@@ -123,7 +126,7 @@ async function createCustomer(req, res) {
 
 async function updateCustomer(req, res) {
   try {
-    const { firstName, lastName, email, mobile, preferredContact, address, garageId } = req.body;
+    const { firstName, lastName, email, mobile, preferredContact, address, garageId, garageConsent } = req.body;
 
     if (email && !isValidEmail(email)) {
       return res.status(400).json({ error: 'Invalid email format.' });
@@ -143,6 +146,12 @@ async function updateCustomer(req, res) {
     if (email) customer.email = email.toLowerCase();
     if (mobile) customer.mobile = mobile;
     if (preferredContact) customer.preferredContact = preferredContact;
+    if (typeof garageConsent === 'boolean') {
+      customer.garageConsent = garageConsent;
+      if (garageConsent && !customer.garageConsentDate) {
+        customer.garageConsentDate = new Date();
+      }
+    }
     if (address !== undefined) customer.address = address;
     if (garageId) {
       if (!customer.garageIds) customer.garageIds = [];

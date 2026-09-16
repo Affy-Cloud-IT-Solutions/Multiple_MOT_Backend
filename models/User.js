@@ -32,6 +32,13 @@ const UserSchema = new mongoose.Schema({
     garageId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Garage'
+    },
+    garageConsent: {
+        type: Boolean,
+        default: false
+    },
+    garageConsentDate: {
+        type: Date
     }
 }, {
     timestamps: true
