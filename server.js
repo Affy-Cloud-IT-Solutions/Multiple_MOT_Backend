@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-// Environment variables
+// Environment variables configuration
 require('dotenv').config();
 
 // Import MongoDB connection
