@@ -475,10 +475,10 @@ async function seedDatabase() {
             },
             {
                 customerId: customerDocs[1]._id,
-                registrationNumber: 'GK17UTO',
+                registrationNumber: 'GK18UTO',
                 make: 'MITSUBISHI',
                 model: 'OUTLANDER',
-                year: 2017,
+                year: 2018,
                 motExpiryDate: new Date('2026-11-02'),
                 lastServiceDate: new Date('2025-10-29'),
                 status: 'Active'
