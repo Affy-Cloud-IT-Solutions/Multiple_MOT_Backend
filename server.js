@@ -105,6 +105,29 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// SMTP Diagnostic Health Check Endpoint
+const { verifySmtpConnection, sendDiagnosticTestEmail } = require('./services/emailService');
+
+app.get('/api/health/smtp', async (req, res) => {
+  try {
+    const diagnostic = await verifySmtpConnection();
+    res.status(diagnostic.success ? 200 : 500).json(diagnostic);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test Email Dispatch Endpoint
+app.post('/api/health/test-email', async (req, res) => {
+  try {
+    const { to } = req.body || {};
+    const result = await sendDiagnosticTestEmail(to);
+    res.status(result.success ? 200 : 500).json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ========================================
 // ERROR HANDLING MIDDLEWARE
 // ========================================

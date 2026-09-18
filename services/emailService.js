@@ -1,33 +1,110 @@
+require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 // Initialize Transporter
 let transporter = null;
 
+function createSmtpTransporter(portOverride = null, secureOverride = null) {
+  const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
+  const defaultPort = parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || process.env.SMTP_PORT || '465', 10);
+  const port = portOverride !== null ? portOverride : defaultPort;
+  const user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
+  const pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+  const isSecure = secureOverride !== null 
+    ? secureOverride 
+    : (process.env.MAIL_ENCRYPTION === 'ssl' || process.env.EMAIL_SECURE === 'true' || port === 465);
+
+  if (!user || !pass) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: isSecure,
+    requireTLS: !isSecure, // Use STARTTLS if not port 465 SSL
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
+    rateDelta: 1000,
+    rateLimit: 5,
+    auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+}
+
 function getTransporter() {
   if (!transporter) {
-    const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || 'smtp.hostinger.com';
-    const port = parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || '465', 10);
-    const user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || '').trim();
-    const pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || '').trim();
-    const isSecure = process.env.MAIL_ENCRYPTION === 'ssl' || process.env.EMAIL_SECURE === 'true' || port === 465;
-
-    if (user && pass) {
-      transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: isSecure,
-        auth: { user, pass },
-        connectionTimeout: 15000,
-        greetingTimeout: 10000,
-        socketTimeout: 20000,
-        tls: { rejectUnauthorized: false }
-      });
+    transporter = createSmtpTransporter();
+    if (transporter) {
+      const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || 'smtp.hostinger.com';
+      const port = process.env.MAIL_PORT || process.env.EMAIL_PORT || '465';
+      const user = process.env.MAIL_USERNAME || process.env.EMAIL_USER || '';
       console.log(`[EMAIL SERVICE] Configured SMTP Transport via ${host}:${port} (${user})`);
     } else {
-      console.log('[EMAIL SERVICE] No live SMTP credentials found in .env. Running in preview/log mode.');
+      console.log('[EMAIL SERVICE] No live SMTP credentials found in environment. Running in preview/log mode.');
     }
   }
   return transporter;
+}
+
+/**
+ * Diagnostic Verification Helper
+ */
+async function verifySmtpConnection() {
+  const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
+  const port = parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || process.env.SMTP_PORT || '465', 10);
+  const user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
+  const pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+
+  if (!user || !pass) {
+    return {
+      success: false,
+      error: 'SMTP user or password missing in environment variables',
+      config: { host, port, user: user ? `${user.substring(0, 3)}***` : 'NOT_SET' }
+    };
+  }
+
+  // Attempt Port 465 (SSL)
+  try {
+    const transport465 = createSmtpTransporter(465, true);
+    await transport465.verify();
+    return {
+      success: true,
+      portUsed: 465,
+      encryption: 'SSL',
+      host,
+      user: `${user.substring(0, 4)}***@${user.split('@')[1] || ''}`,
+      message: 'SMTP connection verified successfully on port 465 (SSL)'
+    };
+  } catch (err465) {
+    console.warn(`[EMAIL DIAGNOSTIC] Port 465 check failed (${err465.message}). Testing Port 587 (STARTTLS)...`);
+    
+    // Attempt Port 587 (STARTTLS)
+    try {
+      const transport587 = createSmtpTransporter(587, false);
+      await transport587.verify();
+      return {
+        success: true,
+        portUsed: 587,
+        encryption: 'STARTTLS',
+        host,
+        user: `${user.substring(0, 4)}***@${user.split('@')[1] || ''}`,
+        message: 'SMTP connection verified successfully on port 587 (STARTTLS) (Port 465 had: ' + err465.message + ')'
+      };
+    } catch (err587) {
+      return {
+        success: false,
+        error: `SMTP connection failed on both ports. Port 465 error: ${err465.message} | Port 587 error: ${err587.message}`,
+        config: { host, user: `${user.substring(0, 4)}***@${user.split('@')[1] || ''}` }
+      };
+    }
+  }
 }
 
 /**
@@ -125,49 +202,166 @@ async function sendEmail({ to, subject, html, text }) {
     return false;
   }
 
+  const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Tech Trade IT Solutions';
+  const fromName = rawFromName.replace(/"/g, '').trim();
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || process.env.EMAIL_USER || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const from = `"${fromName}" <${fromAddress}>`;
+
   const transport = getTransporter();
-  const fromName = process.env.MAIL_FROM_NAME || 'Tech Trade IT Solutions';
-  const fromAddress = process.env.MAIL_FROM_ADDRESS || process.env.EMAIL_USER || 'noreply@techtradeitsolutions.com';
-  const from = process.env.EMAIL_FROM || `"${fromName}" <${fromAddress}>`;
 
   if (transport) {
     try {
-      // 4-second timeout race to prevent hanging if SMTP ports are blocked by firewall
       const sendPromise = transport.sendMail({
         from,
+        sender: fromAddress,
         to,
         subject,
         html,
-        text: text || subject
+        text: text || subject,
+        envelope: {
+          from: fromAddress,
+          to: Array.isArray(to) ? to : [to]
+        }
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP Connection Timeout (Outbound port blocked by network)')), 4000)
+        setTimeout(() => reject(new Error('SMTP Connection Timeout on primary port')), 12000)
       );
 
       const info = await Promise.race([sendPromise, timeoutPromise]);
       console.log(`[EMAIL DISPATCHED VIA SMTP] To: ${to} | Subject: "${subject}" | MessageId: ${info.messageId}`);
       return true;
     } catch (err) {
-      console.warn(`[EMAIL SMTP NOTICE] Direct SMTP delivery note (${err.message}). Logging formatted email preview:`);
-      console.log(`\n======================================================`);
-      console.log(`[EMAIL DISPATCH RECORD]`);
-      console.log(`FROM:    ${from}`);
-      console.log(`TO:      ${to}`);
-      console.log(`SUBJECT: ${subject}`);
-      console.log(`PREVIEW: ${text || subject}`);
-      console.log(`======================================================\n`);
-      return true;
+      console.warn(`[EMAIL SMTP NOTICE] Direct SMTP delivery failed (${err.message}). Trying fallback SMTP (Port 587 STARTTLS)...`);
+      
+      // Fallback attempt with Port 587 STARTTLS
+      try {
+        const fallbackTransport = createSmtpTransporter(587, false);
+        if (!fallbackTransport) {
+          throw new Error('Fallback transporter could not be initialized');
+        }
+
+        const fallbackSendPromise = fallbackTransport.sendMail({
+          from,
+          sender: fromAddress,
+          to,
+          subject,
+          html,
+          text: text || subject,
+          envelope: {
+            from: fromAddress,
+            to: Array.isArray(to) ? to : [to]
+          }
+        });
+
+        const fallbackTimeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('SMTP Connection Timeout on fallback port 587')), 12000)
+        );
+
+        const fallbackInfo = await Promise.race([fallbackSendPromise, fallbackTimeoutPromise]);
+        console.log(`[EMAIL DISPATCHED VIA FALLBACK 587] To: ${to} | Subject: "${subject}" | MessageId: ${fallbackInfo.messageId}`);
+        return true;
+      } catch (fallbackErr) {
+        console.error(`[EMAIL SMTP ERROR] All SMTP dispatches failed for ${to}. Primary error: ${err.message} | Fallback error: ${fallbackErr.message}`);
+        console.log(`\n======================================================`);
+        console.log(`[EMAIL DISPATCH FAILED - RECORD LOGGED]`);
+        console.log(`FROM:    ${from}`);
+        console.log(`TO:      ${to}`);
+        console.log(`SUBJECT: ${subject}`);
+        console.log(`PREVIEW: ${text || subject}`);
+        console.log(`======================================================\n`);
+        return false;
+      }
     }
   } else {
+    console.warn(`[EMAIL SERVICE] No live SMTP credentials found in environment. Email not sent for: ${to}`);
     console.log(`\n======================================================`);
-    console.log(`[EMAIL PREVIEW] (Add EMAIL_USER & EMAIL_PASS to .env for real delivery)`);
+    console.log(`[EMAIL PREVIEW] (Add MAIL_USERNAME & MAIL_PASSWORD to .env for real delivery)`);
     console.log(`FROM:    ${from}`);
     console.log(`TO:      ${to}`);
     console.log(`SUBJECT: ${subject}`);
     console.log(`PREVIEW: ${text || subject}`);
     console.log(`======================================================\n`);
-    return true;
+    return false;
+  }
+}
+
+/**
+ * Diagnostic Test Email Sender (returns detailed results for API inspection)
+ */
+async function sendDiagnosticTestEmail(toEmail = null) {
+  const targetEmail = toEmail || process.env.SUPER_ADMIN_EMAIL || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const timestamp = new Date().toISOString();
+
+  const verifyRes = await verifySmtpConnection();
+  if (!verifyRes.success) {
+    return {
+      success: false,
+      stage: 'VERIFY_FAILED',
+      verification: verifyRes,
+      error: verifyRes.error
+    };
+  }
+
+  const rawFromName = process.env.MAIL_FROM_NAME || 'Tech Trade IT Solutions';
+  const fromName = rawFromName.replace(/"/g, '').trim();
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const from = `"${fromName}" <${fromAddress}>`;
+
+  const html = createHtmlEmailLayout({
+    title: 'Multiple MOT UK - SMTP Diagnostic Test',
+    badgeText: 'Diagnostic Pass',
+    badgeColor: '#059669',
+    contentHtml: `
+      <p class="text">This is an automated diagnostic confirmation test from the Multiple MOT UK live backend.</p>
+      <div class="card-box" style="border: 2px solid #059669;">
+        <div class="info-row"><span class="info-label">Host:</span><span class="info-val">${verifyRes.host}</span></div>
+        <div class="info-row"><span class="info-label">Port / Protocol:</span><span class="info-val">Port ${verifyRes.portUsed} (${verifyRes.encryption})</span></div>
+        <div class="info-row"><span class="info-label">Authenticated User:</span><span class="info-val">${verifyRes.user}</span></div>
+        <div class="info-row"><span class="info-label">Recipient:</span><span class="info-val">${targetEmail}</span></div>
+        <div class="info-row"><span class="info-label">Timestamp:</span><span class="info-val">${timestamp}</span></div>
+      </div>
+      <div class="notice-box">
+        <div class="notice-title">Operational Status: Verified</div>
+        <div>Your Hostinger SMTP integration is fully configured and operational. Reminders, booking confirmations, and registration alerts will be delivered automatically.</div>
+      </div>
+    `,
+    ctaText: 'Open Motorist Portal',
+    ctaUrl: 'https://multiplemot.co.uk/portal'
+  });
+
+  try {
+    const transport = createSmtpTransporter(verifyRes.portUsed, verifyRes.encryption === 'SSL');
+    const sendRes = await transport.sendMail({
+      from,
+      sender: fromAddress,
+      to: targetEmail,
+      subject: `[Diagnostic Test] Multiple MOT UK SMTP Verified (${timestamp})`,
+      html,
+      text: `Multiple MOT UK SMTP Diagnostic Test passed at ${timestamp}. Sent via ${verifyRes.host}:${verifyRes.portUsed} (${verifyRes.encryption})`,
+      envelope: {
+        from: fromAddress,
+        to: [targetEmail]
+      }
+    });
+
+    return {
+      success: true,
+      stage: 'SENT',
+      messageId: sendRes.messageId,
+      recipient: targetEmail,
+      portUsed: verifyRes.portUsed,
+      encryption: verifyRes.encryption,
+      host: verifyRes.host,
+      timestamp
+    };
+  } catch (sendErr) {
+    return {
+      success: false,
+      stage: 'SEND_FAILED',
+      verification: verifyRes,
+      error: sendErr.message
+    };
   }
 }
 
@@ -640,6 +834,9 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
 
 module.exports = {
   sendEmail,
+  verifySmtpConnection,
+  sendDiagnosticTestEmail,
+  getTransporter,
   sendCustomerWelcomeEmail,
   sendGarageRegistrationEmail,
   sendSuperAdminNewGarageAlert,
