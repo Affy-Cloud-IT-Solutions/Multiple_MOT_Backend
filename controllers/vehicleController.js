@@ -2,6 +2,7 @@ const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const { isValidVRN } = require('../utils/validators');
+const { sendVehiclePendingEmail, sendVehicleApprovalEmail } = require('../services/emailService');
 
 const formatDoc = (doc) => {
   if (!doc) return null;
@@ -101,6 +102,7 @@ async function createVehicle(req, res) {
       }
     }
 
+    const vehicleStatus = req.body.status || 'Active';
     const newVehicle = await Vehicle.create({
       customerId: customer._id,
       registrationNumber: regUpper,
@@ -109,13 +111,24 @@ async function createVehicle(req, res) {
       year: year || 2018,
       motExpiryDate: new Date(motExpiryDate),
       lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : undefined,
-      status: req.body.status || 'Active'
+      status: vehicleStatus
     });
 
     await Audit.create({
       activity: 'Vehicle Added',
-      details: `Added vehicle ${newVehicle.make} ${newVehicle.model} (${newVehicle.registrationNumber}) for customer ${customer.firstName} ${customer.lastName}`
+      details: `Added vehicle ${newVehicle.make} ${newVehicle.model} (${newVehicle.registrationNumber}) for customer ${customer.firstName} ${customer.lastName} (Status: ${vehicleStatus})`
     });
+
+    // Email dispatch to customer
+    if (vehicleStatus === 'Pending') {
+      sendVehiclePendingEmail(customer, newVehicle).catch(err =>
+        console.error('[vehicleController] Failed to send vehicle pending email:', err.message)
+      );
+    } else if (vehicleStatus === 'Active' || vehicleStatus === 'Approved') {
+      sendVehicleApprovalEmail(customer, newVehicle, 'Approved').catch(err =>
+        console.error('[vehicleController] Failed to send vehicle approval email:', err.message)
+      );
+    }
 
     res.status(201).json({
       message: 'Vehicle added successfully.',

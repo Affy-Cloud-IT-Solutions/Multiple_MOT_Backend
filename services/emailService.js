@@ -691,37 +691,35 @@ async function sendBookingRejectedEmail(booking, customer, garage, reason = '') 
 // 3. VEHICLE APPROVAL & REMINDER NOTIFICATIONS
 // =========================================================================
 
-async function sendVehicleApprovalEmail(customer, vehicle, status, reason = '') {
-  const isApproved = status === 'Approved' || status === 'Active';
+async function sendVehiclePendingEmail(customer, vehicle) {
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Motorist';
   const reg = vehicle.registrationNumber || 'Vehicle';
+  const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || 'Vehicle';
+  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
 
   const html = createHtmlEmailLayout({
-    title: isApproved ? `Vehicle Verified: ${reg}` : `Vehicle Status: ${reg}`,
-    badgeText: isApproved ? 'Vehicle Active' : 'Verification Issue',
-    badgeColor: isApproved ? '#059669' : '#DC2626',
+    title: `Vehicle Registration Received: ${reg}`,
+    badgeText: 'Pending Approval',
+    badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
-      <p class="text">
-        ${isApproved 
-          ? `Your vehicle <span class="plate-badge">${reg}</span> (${vehicle.make || ''} ${vehicle.model || ''}) has been verified and registered on your motorist account.` 
-          : `Your vehicle registration request for <span class="plate-badge">${reg}</span> could not be verified.`}
-      </p>
-      ${!isApproved && reason ? `
-        <div class="card-box" style="border-left: 4px solid #DC2626;">
-          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason:</div>
-          <div style="font-size: 13px; color: #334155;">${reason}</div>
-        </div>
-      ` : ''}
-      <div class="card-box">
+      <p class="text">Dear ${customerName},</p>
+      <p class="text">Thank you for adding your vehicle <span class="plate-badge">${reg}</span> (<strong>${makeModel}</strong>) to your Multiple MOT UK account.</p>
+      <p class="text">Your vehicle registration has been logged and is currently <strong>awaiting garage verification</strong>. Once approved, automated MOT monitoring and expiry reminders will activate immediately.</p>
+      <div class="card-box" style="border: 2px solid #D97706;">
         <div class="info-row"><span class="info-label">Registration Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
-        <div class="info-row"><span class="info-label">Make & Model:</span><span class="info-val">${vehicle.make || ''} ${vehicle.model || ''}</span></div>
-        <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val">${vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Make & Model:</span><span class="info-val">${makeModel}</span></div>
+        <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${motDateFormatted}</span></div>
+        <div class="info-row"><span class="info-label">Verification Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Pending Approval ⏳</span></div>
+      </div>
+      <div class="notice-box" style="border-left-color: #D97706; background-color: #FFFBEB; color: #92400E;">
+        <div class="notice-title">What Happens Next?</div>
+        <div>Testing station staff will review and approve your vehicle registration. You will receive an instant email notification as soon as your vehicle is active.</div>
       </div>
     `,
-    ctaText: 'Manage Vehicle in Portal',
+    ctaText: 'View My Vehicles in Portal',
     ctaUrl: 'https://multiplemot.co.uk/portal',
     secondaryActions: [
-      { label: 'Book MOT Test', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'My Vehicles', url: 'https://multiplemot.co.uk/portal' },
       { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
       { label: 'Check MOT History', url: 'https://multiplemot.co.uk' },
     ]
@@ -729,9 +727,63 @@ async function sendVehicleApprovalEmail(customer, vehicle, status, reason = '') 
 
   return sendEmail({
     to: customer.email,
-    subject: isApproved ? `Vehicle Verified: ${reg} (${vehicle.make || ''} ${vehicle.model || ''})` : `Vehicle Status Update: ${reg}`,
+    subject: `Vehicle Registration Pending: ${reg} (${makeModel})`,
     html,
-    text: isApproved ? `Your vehicle ${reg} has been verified.` : `Your vehicle ${reg} was not verified: ${reason}`
+    text: `Dear ${customerName}, your vehicle registration for ${reg} (${makeModel}) has been received and is pending garage approval.`
+  });
+}
+
+async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', reason = '') {
+  const isApproved = status === 'Approved' || status === 'Active';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Motorist';
+  const reg = vehicle.registrationNumber || 'Vehicle';
+  const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || vehicle.makeModel || 'Vehicle';
+  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
+
+  const html = createHtmlEmailLayout({
+    title: isApproved ? `🎉 Congratulations! Your vehicle ${reg} is Verified & Approved` : `Vehicle Registration Update: ${reg}`,
+    badgeText: isApproved ? 'Vehicle Active & Approved' : 'Registration Issue',
+    badgeColor: isApproved ? '#059669' : '#DC2626',
+    contentHtml: `
+      <p class="text">Dear ${customerName},</p>
+      <p class="text">
+        ${isApproved 
+          ? `Congratulations! Your vehicle <span class="plate-badge">${reg}</span> (<strong>${makeModel}</strong>) has been <strong>verified and approved</strong> on your Multiple MOT UK motorist account.` 
+          : `Your vehicle registration request for <span class="plate-badge">${reg}</span> could not be verified by the garage.`}
+      </p>
+      ${!isApproved && reason ? `
+        <div class="card-box" style="border-left: 4px solid #DC2626;">
+          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason for Decision:</div>
+          <div style="font-size: 13px; color: #334155;">${reason}</div>
+        </div>
+      ` : ''}
+      <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#DC2626'};">
+        <div class="info-row"><span class="info-label">Registration Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
+        <div class="info-row"><span class="info-label">Make & Model:</span><span class="info-val">${makeModel}</span></div>
+        <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${motDateFormatted}</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? 'Approved & Active ✅' : 'Rejected ❌'}</span></div>
+      </div>
+      ${isApproved ? `
+        <div class="notice-box">
+          <div class="notice-title">Automated DVSA Reminders Active</div>
+          <div>Your vehicle is now actively monitored by Multiple MOT UK. You will receive automated scheduled reminders at 45, 30, 15, and 7 days prior to expiry.</div>
+        </div>
+      ` : ''}
+    `,
+    ctaText: isApproved ? 'Manage Vehicle in Portal' : 'Contact Support',
+    ctaUrl: isApproved ? 'https://multiplemot.co.uk/portal' : 'mailto:support@multiplemot.co.uk',
+    secondaryActions: [
+      { label: 'Book MOT Test Slot', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
+      { label: 'Check Vehicle MOT', url: 'https://multiplemot.co.uk' },
+    ]
+  });
+
+  return sendEmail({
+    to: customer.email,
+    subject: isApproved ? `Congratulations! Your vehicle ${reg} is Verified & Approved (${makeModel})` : `Vehicle Registration Update: ${reg}`,
+    html,
+    text: isApproved ? `Congratulations ${customerName}! Your vehicle ${reg} (${makeModel}) has been approved and is active.` : `Your vehicle registration for ${reg} was not approved: ${reason}`
   });
 }
 
@@ -858,6 +910,7 @@ module.exports = {
   sendBookingRequestEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
+  sendVehiclePendingEmail,
   sendVehicleApprovalEmail,
   sendMotDueReminderEmail
 };

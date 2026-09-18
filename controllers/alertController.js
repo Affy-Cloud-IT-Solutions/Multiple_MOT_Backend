@@ -8,6 +8,7 @@ const {
   sendBookingRequestEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
+  sendVehiclePendingEmail,
   sendVehicleApprovalEmail
 } = require('../services/emailService');
 
@@ -328,7 +329,7 @@ async function createAlert(req, res) {
 
     await newAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
 
-    // Async Email Notifications for MOT Bookings
+    // Async Email Notifications for MOT Bookings & New Vehicle Registrations
     if (type === 'BOOKED') {
       (async () => {
         try {
@@ -344,6 +345,33 @@ async function createAlert(req, res) {
           }
         } catch (e) {
           console.error('[alertController] Error dispatching booking creation emails:', e.message);
+        }
+      })();
+    } else if (type === 'NEW_VEHICLE') {
+      (async () => {
+        try {
+          const cust = customerId ? await Customer.findById(customerId) : null;
+          if (cust) {
+            if (status === 'Approved' || status === 'Active') {
+              sendVehicleApprovalEmail(cust, {
+                registrationNumber: newAlert.registrationNumber,
+                makeModel: newAlert.makeModel,
+                motExpiryDate: newAlert.date
+              }, 'Approved').catch(err =>
+                console.error('[alertController] Failed to send vehicle approved email:', err.message)
+              );
+            } else {
+              sendVehiclePendingEmail(cust, {
+                registrationNumber: newAlert.registrationNumber,
+                makeModel: newAlert.makeModel,
+                motExpiryDate: newAlert.date
+              }).catch(err =>
+                console.error('[alertController] Failed to send vehicle pending email:', err.message)
+              );
+            }
+          }
+        } catch (e) {
+          console.error('[alertController] Error dispatching vehicle registration email:', e.message);
         }
       })();
     }
