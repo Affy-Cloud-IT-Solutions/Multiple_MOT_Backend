@@ -12,14 +12,6 @@ function getSmtpConfig(portOverride = null, secureOverride = null) {
   let user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
   let pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
 
-  // If live server has old/broken config or missing password, fall back to production Hostinger credentials
-  if (!user || !pass || (user.includes('iam') && !pass) || (host.includes('gmail') && !pass)) {
-    host = 'smtp.hostinger.com';
-    port = portOverride !== null ? portOverride : 465;
-    user = 'noreply@techtradeitsolutions.com';
-    pass = 'Affy@1234@techtrade';
-  }
-
   const isSecure = secureOverride !== null 
     ? secureOverride 
     : (process.env.MAIL_ENCRYPTION === 'ssl' || process.env.EMAIL_SECURE === 'true' || port === 465);
