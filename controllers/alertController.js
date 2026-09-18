@@ -6,6 +6,8 @@ const Garage = require('../models/Garage');
 const {
   sendBookingRequestEmailCustomer,
   sendBookingRequestEmailGarage,
+  sendBookingRescheduledEmailCustomer,
+  sendBookingRescheduledEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
@@ -262,6 +264,25 @@ async function createAlert(req, res) {
         }
 
         await existingAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
+
+        // Dispatch Reschedule Notification Emails to Customer and Garage
+        (async () => {
+          try {
+            const cust = customerId ? await Customer.findById(customerId) : null;
+            const gar = existingAlert.garageId;
+            if (cust && gar) {
+              sendBookingRescheduledEmailCustomer(existingAlert, cust, gar, status === 'Approved').catch(err =>
+                console.error('[alertController] Failed to send customer reschedule email:', err.message)
+              );
+              sendBookingRescheduledEmailGarage(existingAlert, cust, gar).catch(err =>
+                console.error('[alertController] Failed to send garage reschedule email:', err.message)
+              );
+            }
+          } catch (e) {
+            console.error('[alertController] Error dispatching reschedule emails:', e.message);
+          }
+        })();
+
         return res.status(200).json({ message: 'Alert rescheduled successfully.', alert: formatDoc(existingAlert) });
       }
     }
@@ -674,6 +695,7 @@ async function rescheduleAlert(req, res) {
   
     alert.date = new Date(date);
     alert.makeModel = `${vehiclePart} - Slot: ${slot}`;
+    alert.slotTime = slot;
     alert.rescheduled = true;
     await alert.save();
 
@@ -681,6 +703,26 @@ async function rescheduleAlert(req, res) {
       activity: 'MOT Booking Rescheduled',
       details: `Rescheduled booking for ${vehiclePart} (${alert.registrationNumber}). Old: ${oldDetails}. New: Date: ${date}, Slot: ${slot}`
     });
+
+    await alert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
+
+    // Dispatch Reschedule Notification Emails
+    (async () => {
+      try {
+        const cust = alert.customerId ? await Customer.findById(alert.customerId) : null;
+        const gar = alert.garageId;
+        if (cust && gar) {
+          sendBookingRescheduledEmailCustomer(alert, cust, gar, alert.status === 'Approved').catch(err =>
+            console.error('[alertController] Failed to send customer reschedule email:', err.message)
+          );
+          sendBookingRescheduledEmailGarage(alert, cust, gar).catch(err =>
+            console.error('[alertController] Failed to send garage reschedule email:', err.message)
+          );
+        }
+      } catch (e) {
+        console.error('[alertController] Error dispatching reschedule emails:', e.message);
+      }
+    })();
 
     res.json({ message: 'Booking rescheduled successfully.', alert: formatDoc(alert) });
   } catch (error) {

@@ -679,6 +679,89 @@ async function sendBookingRejectedEmail(booking, customer, garage, reason = '') 
   });
 }
 
+async function sendBookingRescheduledEmailCustomer(booking, customer, garage, isApproved = false) {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const garageName = garage?.name || 'Selected Garage';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+
+  const html = createHtmlEmailLayout({
+    title: isApproved ? 'MOT Booking Rescheduled & Confirmed' : 'MOT Rescheduling Request Submitted',
+    badgeText: isApproved ? 'Rescheduled & Confirmed' : 'Reschedule Pending',
+    badgeColor: isApproved ? '#059669' : '#D97706',
+    contentHtml: `
+      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
+      <p class="text">${isApproved 
+        ? `Your MOT appointment with <strong>${garageName}</strong> has been successfully rescheduled.` 
+        : `Your request to reschedule your MOT appointment with <strong>${garageName}</strong> has been submitted.`}
+      </p>
+      <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#D97706'};">
+        <div class="info-row"><span class="info-label">Vehicle Registration:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">New Appointment Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-size: 14px; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">New Time Slot:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-size: 14px; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Testing Station:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Station Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Station Telephone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
+      </div>
+      <p class="text">${isApproved 
+        ? 'Please arrive at least 10 minutes prior to your rescheduled testing slot.' 
+        : 'Garage staff will review your new appointment slot shortly.'}
+      </p>
+    `,
+    ctaText: 'View in Customer Portal',
+    ctaUrl: 'https://multiplemot.co.uk/portal',
+    secondaryActions: [
+      { label: 'My Bookings', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Garage Details', url: 'https://multiplemot.co.uk/garages' },
+    ]
+  });
+
+  return sendEmail({
+    to: customer.email,
+    subject: `Rescheduled: MOT for ${reg} at ${garageName} on ${bookingDate}`,
+    html,
+    text: `Your MOT appointment for ${reg} has been rescheduled to ${bookingDate} at ${slotTime} with ${garageName}.`
+  });
+}
+
+async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+
+  const html = createHtmlEmailLayout({
+    title: 'MOT Booking Rescheduled by Customer',
+    badgeText: 'Booking Rescheduled',
+    badgeColor: '#D97706',
+    contentHtml: `
+      <p class="text">A customer has rescheduled their existing MOT appointment.</p>
+      <div class="card-box" style="border-left: 4px solid #D97706;">
+        <div class="info-row"><span class="info-label">Motorist:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Contact Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Vehicle Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">New Requested Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">New Requested Slot:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Service Type:</span><span class="info-val">${booking.serviceName || 'MOT Test'}</span></div>
+      </div>
+      <p class="text">Please review the updated calendar schedule in your management console.</p>
+    `,
+    ctaText: 'Review in Garage Portal',
+    ctaUrl: 'https://multiplemot.co.uk/admin',
+    secondaryActions: [
+      { label: 'Manage Bookings', url: 'https://multiplemot.co.uk/admin' },
+      { label: 'View Calendar', url: 'https://multiplemot.co.uk/admin' },
+    ]
+  });
+
+  return sendEmail({
+    to: garage.email,
+    subject: `[Rescheduled] MOT for ${reg} on ${bookingDate} (${slotTime})`,
+    html,
+    text: `Customer ${customerName} has rescheduled their MOT for ${reg} to ${bookingDate} at ${slotTime}.`
+  });
+}
+
 // =========================================================================
 // 3. VEHICLE APPROVAL & REMINDER NOTIFICATIONS
 // =========================================================================
@@ -900,6 +983,8 @@ module.exports = {
   sendGarageStatusEmail,
   sendBookingRequestEmailCustomer,
   sendBookingRequestEmailGarage,
+  sendBookingRescheduledEmailCustomer,
+  sendBookingRescheduledEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
