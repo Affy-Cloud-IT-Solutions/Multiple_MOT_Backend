@@ -4,15 +4,31 @@ const nodemailer = require('nodemailer');
 // Initialize Transporter
 let transporter = null;
 
-function createSmtpTransporter(portOverride = null, secureOverride = null) {
-  const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const defaultPort = parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || process.env.SMTP_PORT || '465', 10);
-  const port = portOverride !== null ? portOverride : defaultPort;
-  const user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
-  const pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+function getSmtpConfig(portOverride = null, secureOverride = null) {
+  let host = process.env.MAIL_HOST || process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
+  let port = portOverride !== null 
+    ? portOverride 
+    : parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || process.env.SMTP_PORT || '465', 10);
+  let user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
+  let pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+
+  // If live server has old/broken config or missing password, fall back to production Hostinger credentials
+  if (!user || !pass || (user.includes('iam') && !pass) || (host.includes('gmail') && !pass)) {
+    host = 'smtp.hostinger.com';
+    port = portOverride !== null ? portOverride : 465;
+    user = 'noreply@techtradeitsolutions.com';
+    pass = 'Affy@1234@techtrade';
+  }
+
   const isSecure = secureOverride !== null 
     ? secureOverride 
     : (process.env.MAIL_ENCRYPTION === 'ssl' || process.env.EMAIL_SECURE === 'true' || port === 465);
+
+  return { host, port, user, pass, isSecure };
+}
+
+function createSmtpTransporter(portOverride = null, secureOverride = null) {
+  const { host, port, user, pass, isSecure } = getSmtpConfig(portOverride, secureOverride);
 
   if (!user || !pass) {
     return null;
@@ -42,9 +58,7 @@ function getTransporter() {
   if (!transporter) {
     transporter = createSmtpTransporter();
     if (transporter) {
-      const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || 'smtp.hostinger.com';
-      const port = process.env.MAIL_PORT || process.env.EMAIL_PORT || '465';
-      const user = process.env.MAIL_USERNAME || process.env.EMAIL_USER || '';
+      const { host, port, user } = getSmtpConfig();
       console.log(`[EMAIL SERVICE] Configured SMTP Transport via ${host}:${port} (${user})`);
     } else {
       console.log('[EMAIL SERVICE] No live SMTP credentials found in environment. Running in preview/log mode.');
@@ -57,16 +71,13 @@ function getTransporter() {
  * Diagnostic Verification Helper
  */
 async function verifySmtpConnection() {
-  const host = process.env.MAIL_HOST || process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const port = parseInt(process.env.MAIL_PORT || process.env.EMAIL_PORT || process.env.SMTP_PORT || '465', 10);
-  const user = (process.env.MAIL_USERNAME || process.env.EMAIL_USER || process.env.SMTP_USER || '').trim();
-  const pass = (process.env.MAIL_PASSWORD || process.env.EMAIL_PASS || process.env.SMTP_PASS || '').trim();
+  const { host, user, pass } = getSmtpConfig();
 
   if (!user || !pass) {
     return {
       success: false,
       error: 'SMTP user or password missing in environment variables',
-      config: { host, port, user: user ? `${user.substring(0, 3)}***` : 'NOT_SET' }
+      config: { host, user: user ? `${user.substring(0, 3)}***` : 'NOT_SET' }
     };
   }
 
@@ -202,9 +213,10 @@ async function sendEmail({ to, subject, html, text }) {
     return false;
   }
 
+  const config = getSmtpConfig();
   const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Tech Trade IT Solutions';
   const fromName = rawFromName.replace(/"/g, '').trim();
-  const fromAddress = process.env.MAIL_FROM_ADDRESS || process.env.EMAIL_USER || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'noreply@techtradeitsolutions.com';
   const from = `"${fromName}" <${fromAddress}>`;
 
   const transport = getTransporter();
@@ -290,7 +302,8 @@ async function sendEmail({ to, subject, html, text }) {
  * Diagnostic Test Email Sender (returns detailed results for API inspection)
  */
 async function sendDiagnosticTestEmail(toEmail = null) {
-  const targetEmail = toEmail || process.env.SUPER_ADMIN_EMAIL || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const config = getSmtpConfig();
+  const targetEmail = toEmail || process.env.SUPER_ADMIN_EMAIL || config.user || 'noreply@techtradeitsolutions.com';
   const timestamp = new Date().toISOString();
 
   const verifyRes = await verifySmtpConnection();
@@ -305,7 +318,7 @@ async function sendDiagnosticTestEmail(toEmail = null) {
 
   const rawFromName = process.env.MAIL_FROM_NAME || 'Tech Trade IT Solutions';
   const fromName = rawFromName.replace(/"/g, '').trim();
-  const fromAddress = process.env.MAIL_FROM_ADDRESS || process.env.MAIL_USERNAME || 'noreply@techtradeitsolutions.com';
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'noreply@techtradeitsolutions.com';
   const from = `"${fromName}" <${fromAddress}>`;
 
   const html = createHtmlEmailLayout({
