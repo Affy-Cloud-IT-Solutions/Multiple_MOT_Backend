@@ -237,8 +237,9 @@ async function createAlert(req, res) {
         existingAlert.customerName = customerName;
         existingAlert.makeModel = makeModel;
         existingAlert.serviceName = serviceName || existingAlert.serviceName;
-        existingAlert.price = price || existingAlert.price;
-        existingAlert.duration = duration || existingAlert.duration;
+        existingAlert.serviceCategory = req.body.serviceCategory || existingAlert.serviceCategory || 'Servicing';
+        existingAlert.price = price !== undefined ? price : existingAlert.price;
+        existingAlert.duration = duration !== undefined ? duration : existingAlert.duration;
         existingAlert.status = status || 'Pending';
         existingAlert.slotTime = normalizedSlotTime || existingAlert.slotTime;
         if (computedSlotNumber) existingAlert.slotNumber = computedSlotNumber;
@@ -311,9 +312,10 @@ async function createAlert(req, res) {
       slotNumber: computedSlotNumber,
       registrationNumber,
       makeModel,
-      serviceName,
-      price,
-      duration,
+      serviceName: serviceName || 'MOT Test',
+      serviceCategory: req.body.serviceCategory || (serviceName && serviceName.toLowerCase().includes('mot') ? 'MOT' : 'Servicing'),
+      price: price !== undefined ? price : 45.00,
+      duration: duration || 45,
       status: status || 'Pending',
       date: bookingDate
     });

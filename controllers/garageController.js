@@ -9,6 +9,10 @@ const {
   sendSuperAdminNewGarageAlert, 
   sendGarageStatusEmail 
 } = require('../services/emailService');
+const { 
+  STANDARD_SERVICE_CATEGORIES, 
+  STANDARD_SERVICE_TEMPLATES 
+} = require('../config/serviceTemplates');
 
 const DEFAULT_GARAGE_IMAGES = [
   'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop', // 1. Exterior
@@ -1005,6 +1009,380 @@ async function resubmitGarageDocument(req, res) {
   }
 }
 
+// ─── DYNAMIC GARAGE SERVICES CONTROLLERS ────────────────────────────────────
+
+/**
+ * Returns standard global catalog templates and categories
+ */
+async function getServiceCatalogTemplates(req, res) {
+  try {
+    res.json({
+      categories: STANDARD_SERVICE_CATEGORIES,
+      templates: STANDARD_SERVICE_TEMPLATES
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Fetch all services for a specific garage
+ */
+async function getGarageServices(req, res) {
+  try {
+    const { id } = req.params;
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    let services = Array.isArray(garage.services) ? garage.services : [];
+
+    // If garage has zero services configured yet, populate with sensible default templates
+    if (services.length === 0) {
+      const defaultTemplates = STANDARD_SERVICE_TEMPLATES.slice(0, 4);
+      garage.services = defaultTemplates;
+      await garage.save();
+      services = garage.services;
+    }
+
+    // Role-based visibility:
+    // If request is from the garage owner or platform admin, return ALL services (active and inactive)
+    const isOwnerOrAdmin = req.user && (
+      req.user.role === 'admin' || 
+      String(req.user.garageId) === String(id) || 
+      String(req.user.stationId) === String(id)
+    );
+
+    const formattedServices = services.map(s => {
+      const sObj = s.toObject ? s.toObject() : s;
+      return {
+        ...sObj,
+        id: (sObj._id || sObj.id || '').toString(),
+        category: sObj.category || 'Servicing',
+        price: Number(sObj.price) || 0,
+        duration: Number(sObj.duration) || 45,
+        description: sObj.description || '',
+        isActive: sObj.isActive !== false
+      };
+    });
+
+    const finalServices = isOwnerOrAdmin 
+      ? formattedServices 
+      : formattedServices.filter(s => s.isActive);
+
+    res.json({
+      garageId: garage._id.toString(),
+      garageName: garage.name,
+      totalServices: formattedServices.length,
+      activeServices: formattedServices.filter(s => s.isActive).length,
+      services: finalServices
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Add a new custom or template-based service to a garage
+ */
+async function addGarageService(req, res) {
+  try {
+    const { id } = req.params;
+    const { 
+      name, 
+      category, 
+      price, 
+      duration, 
+      description, 
+      availability, 
+      isActive 
+    } = req.body;
+
+    // Authorization check
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(id) && String(req.user?.stationId) !== String(id)) {
+      return res.status(403).json({ error: 'Access Denied. You do not have permissions to modify services for this garage.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    // Input Validation
+    const cleanName = (name || '').trim();
+    if (!cleanName || cleanName.length < 2) {
+      return res.status(400).json({ error: 'Service name is required (minimum 2 characters).' });
+    }
+    if (cleanName.length > 100) {
+      return res.status(400).json({ error: 'Service name cannot exceed 100 characters.' });
+    }
+
+    const numPrice = Number(price);
+    if (isNaN(numPrice) || numPrice < 0 || numPrice > 10000) {
+      return res.status(400).json({ error: 'Price must be a valid positive number up to £10,000.' });
+    }
+
+    const numDuration = Number(duration) || 45;
+    if (isNaN(numDuration) || numDuration < 5 || numDuration > 720) {
+      return res.status(400).json({ error: 'Duration must be between 5 and 720 minutes.' });
+    }
+
+    // Duplicate check
+    const existingIndex = (garage.services || []).findIndex(
+      s => (s.name || '').toLowerCase().trim() === cleanName.toLowerCase()
+    );
+    if (existingIndex !== -1) {
+      return res.status(400).json({ error: `A service with the name "${cleanName}" already exists for this garage.` });
+    }
+
+    // Auto-determine category if missing
+    let cleanCategory = (category || '').trim();
+    if (!cleanCategory) {
+      const lower = cleanName.toLowerCase();
+      if (lower.includes('mot')) cleanCategory = 'MOT';
+      else if (lower.includes('tyre') || lower.includes('wheel') || lower.includes('tracking')) cleanCategory = 'Tyre replacement';
+      else if (lower.includes('brake') || lower.includes('disc') || lower.includes('pad')) cleanCategory = 'Brakes';
+      else if (lower.includes('diag') || lower.includes('scan') || lower.includes('code')) cleanCategory = 'Diagnostics';
+      else if (lower.includes('exhaust') || lower.includes('dpf') || lower.includes('emissions')) cleanCategory = 'Exhaust';
+      else if (lower.includes('air con') || lower.includes('ac ') || lower.includes('regas')) cleanCategory = 'Air Conditioning';
+      else if (lower.includes('repair') || lower.includes('clutch') || lower.includes('engine')) cleanCategory = 'Repairs';
+      else cleanCategory = 'Servicing';
+    }
+
+    const newService = {
+      name: cleanName,
+      category: cleanCategory,
+      price: parseFloat(numPrice.toFixed(2)),
+      duration: Math.round(numDuration),
+      description: (description || '').trim(),
+      availability: Array.isArray(availability) && availability.length > 0 
+        ? availability 
+        : (garage.workingDays && garage.workingDays.length > 0 ? garage.workingDays : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']),
+      isActive: isActive !== false
+    };
+
+    if (!Array.isArray(garage.services)) {
+      garage.services = [];
+    }
+    garage.services.push(newService);
+    await garage.save();
+
+    const createdService = garage.services[garage.services.length - 1];
+
+    await Audit.create({
+      activity: 'Garage Service Added',
+      details: `Added new service "${cleanName}" (£${numPrice.toFixed(2)}, ${numDuration} mins) to garage "${garage.name}".`
+    });
+
+    res.status(201).json({
+      message: `Service "${cleanName}" added successfully.`,
+      service: {
+        ...createdService.toObject(),
+        id: createdService._id.toString()
+      },
+      services: garage.services
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Update an existing garage service (price, duration, active status, description, etc.)
+ */
+async function updateGarageService(req, res) {
+  try {
+    const { id, serviceId } = req.params;
+    const { 
+      name, 
+      category, 
+      price, 
+      duration, 
+      description, 
+      availability, 
+      isActive 
+    } = req.body;
+
+    // Authorization check
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(id) && String(req.user?.stationId) !== String(id)) {
+      return res.status(403).json({ error: 'Access Denied. You do not have permissions to modify services for this garage.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    const service = (garage.services || []).find(
+      s => (s._id && s._id.toString() === serviceId) || s.id === serviceId || String(s._id) === serviceId
+    );
+
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found in this garage.' });
+    }
+
+    if (name !== undefined) {
+      const cleanName = name.trim();
+      if (!cleanName || cleanName.length < 2) {
+        return res.status(400).json({ error: 'Service name is required (minimum 2 characters).' });
+      }
+      // Check duplicate with others
+      const duplicate = (garage.services || []).some(
+        s => String(s._id) !== String(service._id) && (s.name || '').toLowerCase().trim() === cleanName.toLowerCase()
+      );
+      if (duplicate) {
+        return res.status(400).json({ error: `Another service with the name "${cleanName}" already exists.` });
+      }
+      service.name = cleanName;
+    }
+
+    if (category !== undefined) {
+      service.category = category.trim() || service.category;
+    }
+
+    if (price !== undefined) {
+      const numPrice = Number(price);
+      if (isNaN(numPrice) || numPrice < 0 || numPrice > 10000) {
+        return res.status(400).json({ error: 'Price must be a valid positive number up to £10,000.' });
+      }
+      service.price = parseFloat(numPrice.toFixed(2));
+    }
+
+    if (duration !== undefined) {
+      const numDuration = Number(duration);
+      if (isNaN(numDuration) || numDuration < 5 || numDuration > 720) {
+        return res.status(400).json({ error: 'Duration must be between 5 and 720 minutes.' });
+      }
+      service.duration = Math.round(numDuration);
+    }
+
+    if (description !== undefined) {
+      service.description = description.trim();
+    }
+
+    if (availability !== undefined && Array.isArray(availability)) {
+      service.availability = availability;
+    }
+
+    if (isActive !== undefined) {
+      service.isActive = Boolean(isActive);
+    }
+
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Service Updated',
+      details: `Updated service "${service.name}" (Active: ${service.isActive}, Price: £${service.price}) for garage "${garage.name}".`
+    });
+
+    res.json({
+      message: `Service "${service.name}" updated successfully.`,
+      service: {
+        ...service.toObject(),
+        id: service._id.toString()
+      },
+      services: garage.services
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Delete a service from a garage
+ */
+async function deleteGarageService(req, res) {
+  try {
+    const { id, serviceId } = req.params;
+
+    // Authorization check
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(id) && String(req.user?.stationId) !== String(id)) {
+      return res.status(403).json({ error: 'Access Denied. You do not have permissions to modify services for this garage.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    const initialLength = (garage.services || []).length;
+    const removedService = (garage.services || []).find(
+      s => (s._id && s._id.toString() === serviceId) || s.id === serviceId || String(s._id) === serviceId
+    );
+
+    garage.services = (garage.services || []).filter(
+      s => (s._id && s._id.toString() !== serviceId) && s.id !== serviceId && String(s._id) !== serviceId
+    );
+
+    if (garage.services.length === initialLength) {
+      return res.status(404).json({ error: 'Service not found or already deleted.' });
+    }
+
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Service Deleted',
+      details: `Deleted service "${removedService ? removedService.name : serviceId}" from garage "${garage.name}".`
+    });
+
+    res.json({
+      message: `Service deleted successfully.`,
+      services: garage.services
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * 1-Click initialize or reset popular standard service templates for a garage
+ */
+async function seedGarageDefaultServices(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Authorization check
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(id) && String(req.user?.stationId) !== String(id)) {
+      return res.status(403).json({ error: 'Access Denied. You do not have permissions to manage services for this garage.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    const existingNames = new Set((garage.services || []).map(s => (s.name || '').toLowerCase().trim()));
+    let addedCount = 0;
+
+    for (const tpl of STANDARD_SERVICE_TEMPLATES) {
+      if (!existingNames.has(tpl.name.toLowerCase().trim())) {
+        garage.services.push({
+          ...tpl,
+          availability: garage.workingDays || tpl.availability
+        });
+        existingNames.add(tpl.name.toLowerCase().trim());
+        addedCount++;
+      }
+    }
+
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Standard Services Initialized',
+      details: `Added ${addedCount} standard automotive service presets to garage "${garage.name}".`
+    });
+
+    res.json({
+      message: `Successfully initialized ${addedCount} standard automotive service presets.`,
+      addedCount,
+      services: garage.services
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   registerGarage,
   getGarages,
@@ -1019,5 +1397,12 @@ module.exports = {
   updateGarageStationStatus,
   getGarageSlots,
   checkGarageStatusByEmail,
-  resubmitGarageDocument
+  resubmitGarageDocument,
+  getServiceCatalogTemplates,
+  getGarageServices,
+  addGarageService,
+  updateGarageService,
+  deleteGarageService,
+  seedGarageDefaultServices
 };
+

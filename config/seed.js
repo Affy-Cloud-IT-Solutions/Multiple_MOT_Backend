@@ -126,6 +126,33 @@ async function seedDatabase() {
                     }
                 }
             }
+
+            // Enrich all existing approved garages with categories and multi-services if missing
+            const { STANDARD_SERVICE_TEMPLATES } = require('./serviceTemplates');
+            const allGarages = await Garage.find({});
+            for (const gar of allGarages) {
+                let modified = false;
+                if (!gar.services || gar.services.length === 0) {
+                    gar.services = STANDARD_SERVICE_TEMPLATES.slice(0, 6);
+                    modified = true;
+                } else {
+                    gar.services.forEach(srv => {
+                        if (!srv.category) {
+                            const lowName = (srv.name || '').toLowerCase();
+                            if (lowName.includes('mot')) srv.category = 'MOT';
+                            else if (lowName.includes('tyre') || lowName.includes('wheel')) srv.category = 'Tyre replacement';
+                            else if (lowName.includes('brake')) srv.category = 'Brakes';
+                            else if (lowName.includes('diag')) srv.category = 'Diagnostics';
+                            else if (lowName.includes('exhaust')) srv.category = 'Exhaust';
+                            else srv.category = 'Servicing';
+                            modified = true;
+                        }
+                    });
+                }
+                if (modified) {
+                    await gar.save();
+                }
+            }
             return;
         }
 

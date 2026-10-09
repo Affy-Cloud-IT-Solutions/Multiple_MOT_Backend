@@ -81,9 +81,15 @@ const GarageSchema = new mongoose.Schema({
         default: ''
     },
     services: [{
-        name: { type: String, required: true },
-        price: { type: Number, required: true },
-        duration: { type: Number, required: true }, // in minutes
+        name: { type: String, required: true, trim: true },
+        category: { 
+            type: String, 
+            default: 'Servicing',
+            trim: true
+        }, // e.g. 'MOT', 'Servicing', 'Repairs', 'Tyre replacement', 'Diagnostics', 'Brakes', 'Exhaust', 'Custom'
+        price: { type: Number, required: true, min: 0 },
+        duration: { type: Number, required: true, default: 45, min: 5 }, // in minutes
+        description: { type: String, default: '', trim: true },
         availability: [{ type: String }], // e.g. ["Monday", "Tuesday", ...]
         isActive: { type: Boolean, default: true }
     }],

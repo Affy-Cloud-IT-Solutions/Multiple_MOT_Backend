@@ -33,6 +33,10 @@ const AlertSchema = new mongoose.Schema({
     serviceName: {
         type: String
     },
+    serviceCategory: {
+        type: String,
+        default: 'General'
+    },
     price: {
         type: Number
     },
