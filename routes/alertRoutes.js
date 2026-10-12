@@ -11,6 +11,7 @@ router.put('/:id/approve', authMiddleware, alertController.approveAlert);
 router.put('/:id/acknowledge', authMiddleware, alertController.acknowledgeAlert);
 router.put('/:id/reject', authMiddleware, alertController.rejectAlert);
 router.put('/:id/reschedule', authMiddleware, alertController.rescheduleAlert);
+router.put('/:id/cancel', authMiddleware, alertController.cancelAlert);
 
 // SMTP Test & Diagnostic Endpoint
 router.all('/test-smtp', async (req, res) => {

@@ -1,5 +1,13 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+
+// Ensure reliable DNS resolution for SMTP delivery on Windows/Node
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (dnsErr) {
+  // Ignore if custom DNS servers not permitted in environment
+}
 
 // Initialize Transporter
 let transporter = null;
@@ -111,16 +119,10 @@ async function verifySmtpConnection() {
 }
 
 /**
- * Base Email Layout - Clean, simple, easy-to-read template
+ * Base Email Layout - Clean, simple, easy-to-read template (no buttons or quick link blocks)
  */
-function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', contentHtml, ctaText, ctaUrl, secondaryActions = [] }) {
+function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', contentHtml }) {
   const currentYear = new Date().getFullYear();
-  const defaultActions = [
-    { label: 'Check MOT Status', url: 'https://multiplemot.co.uk' },
-    { label: 'Find Local Garages', url: 'https://multiplemot.co.uk/garages' },
-    { label: 'My Vehicles & Bookings', url: 'https://multiplemot.co.uk/portal' },
-  ];
-  const navActions = secondaryActions.length > 0 ? secondaryActions : defaultActions;
 
   return `
 <!DOCTYPE html>
@@ -147,12 +149,6 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
     .info-label { color: #64748B; font-weight: 600; }
     .info-val { color: #0B1F33; font-weight: 700; text-align: right; }
     .plate-badge { display: inline-block; background-color: #FFD200; color: #111827; font-family: 'Courier New', Courier, monospace, sans-serif; font-weight: 900; padding: 3px 8px; border-radius: 4px; border: 1.5px solid #111827; font-size: 13px; letter-spacing: 1.2px; }
-    .btn-container { text-align: center; margin: 22px 0 14px 0; }
-    .btn-primary { display: inline-block; background-color: #1677FF; color: #FFFFFF !important; font-size: 14px; font-weight: 800; text-decoration: none; padding: 12px 30px; border-radius: 8px; letter-spacing: 0.3px; }
-    .app-nav-section { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 14px; margin-top: 22px; }
-    .app-nav-title { font-size: 11px; font-weight: 800; color: #64748B; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
-    .app-nav-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-    .app-nav-link { display: inline-block; background-color: #FFFFFF; border: 1px solid #CBD5E1; color: #0B1F33 !important; font-size: 12px; font-weight: 700; text-decoration: none; padding: 6px 12px; border-radius: 6px; }
     .notice-box { background-color: #EFF6FF; border-left: 4px solid #1677FF; border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 14px 0; font-size: 13px; line-height: 1.5; color: #1E3A8A; }
     .notice-title { font-weight: 800; margin-bottom: 2px; }
     .footer { background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 18px 20px; text-align: center; font-size: 11px; color: #64748B; line-height: 1.6; }
@@ -170,24 +166,10 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
         ${badgeText ? `<span class="badge" style="background-color: ${badgeColor}15; color: ${badgeColor}; border: 1px solid ${badgeColor}35;">${badgeText}</span>` : ''}
         <h2 class="title">${title}</h2>
         ${contentHtml}
-        
-        ${ctaText && ctaUrl ? `
-          <div class="btn-container">
-            <a href="${ctaUrl}" class="btn-primary" target="_blank">${ctaText}</a>
-          </div>
-        ` : ''}
-
-        <!-- Quick Links -->
-        <div class="app-nav-section">
-          <div class="app-nav-title">Quick Links</div>
-          <div class="app-nav-grid">
-            ${navActions.map(action => `<a href="${action.url}" class="app-nav-link" target="_blank">${action.label}</a>`).join('')}
-          </div>
-        </div>
       </div>
       <div class="footer">
         <p>This email was sent by Multiple MOT UK.<br>© ${currentYear} Multiple MOT UK. All rights reserved.</p>
-        <p>Need help? Email us at <a href="mailto:support@multiplemot.co.uk">support@multiplemot.co.uk</a> or open your <a href="https://multiplemot.co.uk/portal">Account</a>.</p>
+        <p>Need help? Email us at <a href="mailto:support@multiplemot.co.uk">support@multiplemot.co.uk</a></p>
       </div>
     </div>
   </div>
@@ -744,6 +726,83 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
   });
 }
 
+async function sendBookingCancelledEmailCustomer(booking, customer, garage, cancelledBy = 'Customer', reason = '') {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const garageName = garage?.name || garage?.garageName || booking.stationName || 'Selected Garage';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const serviceName = booking.serviceName || 'MOT Test';
+
+  const html = createHtmlEmailLayout({
+    title: 'Booking Cancelled',
+    badgeText: 'Cancelled',
+    badgeColor: '#EF4444',
+    contentHtml: `
+      <p class="text">
+        Your booking for <strong>${serviceName}</strong> (${reg}) at <strong>${garageName}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been cancelled.
+      </p>
+      <div class="card-box" style="border: 2px solid #EF4444;">
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
+        ${garage.address ? `<div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>` : ''}
+        ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
+      </div>
+      <p class="text" style="color: #64748B; font-size: 13px; margin-top: 12px;">
+        No further action is required. If you wish to re-book for another date or time, you can do so through the mobile app.
+      </p>
+    `
+  });
+
+  return sendEmail({
+    to: customer.email,
+    subject: `[Cancelled] ${serviceName} Booking for ${reg} on ${bookingDate}`,
+    html,
+    text: `Your ${serviceName} appointment for ${reg} on ${bookingDate} at ${slotTime} with ${garageName} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`
+  });
+}
+
+async function sendBookingCancelledEmailGarage(booking, customer, garage, cancelledBy = 'Customer', reason = '') {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || booking.customerName || 'Customer';
+  const customerPhone = customer?.mobile || customer?.phone || 'N/A';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const serviceName = booking.serviceName || 'MOT Test';
+
+  const html = createHtmlEmailLayout({
+    title: 'Booking Cancelled - Slot Freed',
+    badgeText: 'Slot Released',
+    badgeColor: '#EF4444',
+    contentHtml: `
+      <p class="text">
+        The booking for <strong>${reg}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been <strong>cancelled</strong> by ${cancelledBy}.
+      </p>
+      <div class="card-box" style="border-left: 4px solid #EF4444;">
+        <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Contact:</span><span class="info-val">${customerPhone}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
+      </div>
+      <p class="text" style="color: #059669; font-weight: 600; margin-top: 10px;">
+        ✅ This slot (${slotTime} on ${bookingDate}) has been automatically released and is now open for new bookings.
+      </p>
+    `
+  });
+
+  return sendEmail({
+    to: garage.email,
+    subject: `[Booking Cancelled] ${reg} - Slot Released for ${bookingDate} (${slotTime})`,
+    html,
+    text: `Booking for ${reg} on ${bookingDate} at ${slotTime} has been cancelled by ${cancelledBy}. This slot is now available.${reason ? ` Reason: ${reason}` : ''}`
+  });
+}
+
 // =========================================================================
 // 3. VEHICLE APPROVAL & REMINDER NOTIFICATIONS
 // =========================================================================
@@ -964,6 +1023,8 @@ module.exports = {
   sendBookingRequestEmailGarage,
   sendBookingRescheduledEmailCustomer,
   sendBookingRescheduledEmailGarage,
+  sendBookingCancelledEmailCustomer,
+  sendBookingCancelledEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
