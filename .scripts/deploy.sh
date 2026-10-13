@@ -46,7 +46,7 @@ if command -v pm2 > /dev/null 2>&1; then
 fi
 
 # 4. Prepare required directories & permissions
-mkdir -p uploads certbot/conf certbot/www nginx/conf.d
+mkdir -p uploads
 chmod -R 755 uploads
 chmod +x .scripts/*.sh || true
 

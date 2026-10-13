@@ -9,7 +9,5 @@ npm-debug.log
 *.md
 .DS_Store
 Thumbs.db
-certbot
-nginx
 uploads/*
 !uploads/.gitkeep
