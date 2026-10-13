@@ -65,8 +65,6 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/garages', garageRoutes);
 app.use('/api/upload', uploadRoutes);
 
-});
-
 // ========================================
 // HEALTH CHECK ENDPOINTS
 // ========================================
