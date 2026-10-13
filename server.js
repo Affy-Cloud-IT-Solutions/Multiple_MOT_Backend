@@ -65,16 +65,6 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/garages', garageRoutes);
 app.use('/api/upload', uploadRoutes);
 
-// Root index status endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'MOT Reminder Management API',
-    status: 'running',
-    environment: process.env.NODE_ENV || 'production',
-    healthCheck: '/health',
-    apiHealthCheck: '/api/health',
-    timestamp: new Date().toISOString()
-  });
 });
 
 // ========================================
