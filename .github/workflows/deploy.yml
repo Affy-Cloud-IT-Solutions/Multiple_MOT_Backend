@@ -1,24 +1,61 @@
-name: Deploy
+name: CI/CD GitOps Deployment
 
 on:
   push:
-    branches: ["production"]
+    branches:
+      - production
   pull_request:
-    branches: ["production"]
+    branches:
+      - production
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # ============================================================================
+  # 1. CI Stage: Validate Dockerfile & Test Container Build
+  # ============================================================================
+  validate-and-build:
+    name: Build & Validate Docker Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@master
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image (Dry-Run Test)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: mot-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # 2. CD GitOps Stage: Deploy to VPS Server via SSH
+  # ============================================================================
+  deploy:
+    name: Deploy to Production VPS (Server3)
+    needs: validate-and-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
-          port: ${{ secrets.PORT }}
+          port: ${{ secrets.PORT || 22 }}
           key: ${{ secrets.SSHKEY }}
+          script_stop: true
+          command_timeout: 10m
           script: |
+            echo "Starting GitOps Deployment on Server3 VPS..."
             cd /var/www/mot/Multiple_MOT_Backend
-            chmod +x ./.scripts/deploy.sh
+            chmod +x .scripts/deploy.sh
             ./.scripts/deploy.sh

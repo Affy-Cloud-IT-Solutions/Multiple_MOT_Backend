@@ -1,2 +1,17 @@
 node_modules/
 .env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Certbot generated certificates & keys
+certbot/conf/*
+!certbot/conf/.gitkeep
+certbot/www/*
+!certbot/www/.gitkeep
+
+# Operating system files
+.DS_Store
+Thumbs.db

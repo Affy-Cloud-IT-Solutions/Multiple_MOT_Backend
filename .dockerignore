@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.github
+.scripts
+.env
+.env.*
+!.env.example
+*.md
+.DS_Store
+Thumbs.db
+certbot
+nginx
+uploads/*
+!uploads/.gitkeep

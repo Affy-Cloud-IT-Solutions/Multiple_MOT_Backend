@@ -1,36 +1,75 @@
 #!/bin/bash
 set -e
 
-APP_NAME="mot-backend"
+# ==============================================================================
+# Production Deployment Script (Docker + GitOps)
+# MOT Reminder Management System Backend
+# ==============================================================================
+
+PROJECT_DIR="/var/www/mot/Multiple_MOT_Backend"
 SSH_KEY="$HOME/.ssh/Multiple_MOT_Backend"
 
-echo "🚀 Deployment started..."
+echo "=========================================================="
+echo " Starting Dockerized Deployment..."
+echo " Time: $(date)"
+echo " Directory: $PROJECT_DIR"
+echo "=========================================================="
 
-# Ensure we are in the correct directory
-cd /var/www/mot/Multiple_MOT_Backend
+cd "$PROJECT_DIR"
 
-# Reset local changes and pull the latest version of the app from production branch
-echo "📦 Pulling latest code from production branch..."
-GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git fetch origin
-GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git reset --hard origin/production
-GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git pull origin production
-echo "✅ New changes copied to server!"
-
-# Install Node.js dependencies
-echo "📦 Installing dependencies..."
-npm install --yes
-
-# Restart or reload PM2 application
-echo "🔁 Starting or restarting PM2 app..."
-if pm2 describe $APP_NAME > /dev/null 2>&1; then
-    echo "App already exists — restarting..."
-    pm2 restart $APP_NAME --update-env
+# 1. Update source code from production branch
+echo "--> Pulling latest changes from production branch..."
+if [ -f "$SSH_KEY" ]; then
+    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git fetch origin production
+    GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git reset --hard origin/production
 else
-    echo "App not found — starting new instance..."
-    pm2 start server.js --name $APP_NAME
+    git fetch origin production
+    git reset --hard origin/production
 fi
 
-# Save PM2 process list
-pm2 save
+# 2. Check for required environment configuration file
+if [ ! -f ".env" ]; then
+    echo "ERROR: .env file is missing in $PROJECT_DIR!"
+    echo "Please copy .env.example to .env and configure production credentials."
+    exit 1
+fi
 
-echo "✅ Deployment Finished Successfully!"
+# 3. Clean up legacy PM2 process if still active (free up memory and avoid port conflicts)
+if command -v pm2 > /dev/null 2>&1; then
+    if pm2 describe mot-backend > /dev/null 2>&1; then
+        echo "--> Stopping legacy PM2 application 'mot-backend'..."
+        pm2 stop mot-backend || true
+        pm2 delete mot-backend || true
+        pm2 save || true
+        echo "Legacy PM2 application removed successfully."
+    fi
+fi
+
+# 4. Prepare required directories & permissions
+mkdir -p uploads certbot/conf certbot/www nginx/conf.d
+chmod -R 755 uploads
+chmod +x .scripts/*.sh || true
+
+# 5. Build and launch Docker containers
+echo "--> Building and starting Docker containers..."
+docker compose build backend
+docker compose up -d --remove-orphans
+
+# 6. Verify container health status
+echo "--> Verifying service health..."
+sleep 5
+docker compose ps
+
+# Check backend container health
+STATUS=$(docker inspect --format='{{json .State.Health.Status}}' mot_backend_app 2>/dev/null || echo '"unknown"')
+echo "Backend health status: $STATUS"
+
+# 7. Clean up dangling images to keep server disk clean
+echo "--> Cleaning up unused Docker images..."
+docker image prune -f
+
+echo "=========================================================="
+echo " Deployment Finished Successfully!"
+echo " Target Domain: https://api.ondoorcarservice.com"
+echo " Health Endpoint: https://api.ondoorcarservice.com/health"
+echo "=========================================================="
