@@ -24,7 +24,7 @@ services:
       # Persistent storage for user uploads (survives rebuilds/restarts)
       - ./uploads:/app/uploads
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     deploy:
       resources:
         limits:
@@ -69,7 +69,7 @@ services:
       backend:
         condition: service_healthy
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     deploy:
       resources:
         limits:

@@ -65,6 +65,18 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/garages', garageRoutes);
 app.use('/api/upload', uploadRoutes);
 
+// Root index status endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'MOT Reminder Management API',
+    status: 'running',
+    environment: process.env.NODE_ENV || 'production',
+    healthCheck: '/health',
+    apiHealthCheck: '/api/health',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ========================================
 // HEALTH CHECK ENDPOINTS
 // ========================================
@@ -82,10 +94,10 @@ app.get('/health', (req, res) => {
 app.get('/api/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState;
   const dbStatusMap = {
-    0: 'Disconnected ❌',
-    1: 'Connected ✅',
-    2: 'Connecting ⏳',
-    3: 'Disconnecting ⏳'
+    0: 'Disconnected âŒ',
+    1: 'Connected âœ…',
+    2: 'Connecting â³',
+    3: 'Disconnecting â³'
   };
 
   res.json({
