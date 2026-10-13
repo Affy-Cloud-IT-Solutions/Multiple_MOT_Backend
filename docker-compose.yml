@@ -3,7 +3,7 @@
 # ==============================================================================
 services:
   # ----------------------------------------------------------------------------
-  # 1. Node.js Backend Application Service
+  # 1. Node.js Backend Application Service (Production Container)
   # ----------------------------------------------------------------------------
   backend:
     build:
@@ -11,6 +11,9 @@ services:
       dockerfile: Dockerfile
     container_name: mot_backend_app
     restart: always
+    ports:
+      # Expose on localhost 5000 for secure reverse proxy access
+      - "127.0.0.1:5000:5000"
     env_file:
       - path: .env
         required: false
@@ -45,9 +48,11 @@ services:
       - mot_network
 
   # ----------------------------------------------------------------------------
-  # 2. Hardened Nginx Reverse Proxy with SSL & Anti-Bot Protection
+  # 2. Hardened Nginx Reverse Proxy (Used in Standalone Deployments)
   # ----------------------------------------------------------------------------
   nginx:
+    profiles:
+      - standalone
     image: nginx:1.27-alpine
     container_name: mot_nginx_proxy
     restart: always
@@ -82,9 +87,11 @@ services:
       - mot_network
 
   # ----------------------------------------------------------------------------
-  # 3. Certbot Service (Automated SSL Certificate Renewal)
+  # 3. Certbot Service (Automated SSL Renewal for Standalone Profile)
   # ----------------------------------------------------------------------------
   certbot:
+    profiles:
+      - standalone
     image: certbot/certbot:latest
     container_name: mot_certbot
     restart: unless-stopped

@@ -50,10 +50,10 @@ mkdir -p uploads certbot/conf certbot/www nginx/conf.d
 chmod -R 755 uploads
 chmod +x .scripts/*.sh || true
 
-# 5. Build and launch Docker containers
-echo "--> Building and starting Docker containers..."
+# 5. Build and launch Docker container for backend
+echo "--> Building and starting Docker backend container..."
 docker compose build backend
-docker compose up -d --remove-orphans
+docker compose up -d backend --remove-orphans
 
 # 6. Verify container health status
 echo "--> Verifying service health..."
