@@ -33,6 +33,10 @@ const AlertSchema = new mongoose.Schema({
     serviceName: {
         type: String
     },
+    serviceCategory: {
+        type: String,
+        default: 'General'
+    },
     price: {
         type: Number
     },
@@ -59,7 +63,7 @@ const AlertSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Approved', 'Acknowledged', 'Rejected', 'Completed'],
+        enum: ['Pending', 'Approved', 'Acknowledged', 'Rejected', 'Completed', 'Cancelled'],
         default: 'Pending'
     },
     rejectionReason: {
@@ -69,6 +73,17 @@ const AlertSchema = new mongoose.Schema({
     rescheduled: {
         type: Boolean,
         default: false
+    },
+    cancellationReason: {
+        type: String,
+        default: ''
+    },
+    cancelledBy: {
+        type: String,
+        default: ''
+    },
+    cancelledAt: {
+        type: Date
     }
 }, {
     timestamps: true

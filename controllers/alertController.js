@@ -8,6 +8,8 @@ const {
   sendBookingRequestEmailGarage,
   sendBookingRescheduledEmailCustomer,
   sendBookingRescheduledEmailGarage,
+  sendBookingCancelledEmailCustomer,
+  sendBookingCancelledEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
@@ -237,8 +239,9 @@ async function createAlert(req, res) {
         existingAlert.customerName = customerName;
         existingAlert.makeModel = makeModel;
         existingAlert.serviceName = serviceName || existingAlert.serviceName;
-        existingAlert.price = price || existingAlert.price;
-        existingAlert.duration = duration || existingAlert.duration;
+        existingAlert.serviceCategory = req.body.serviceCategory || existingAlert.serviceCategory || 'Servicing';
+        existingAlert.price = price !== undefined ? price : existingAlert.price;
+        existingAlert.duration = duration !== undefined ? duration : existingAlert.duration;
         existingAlert.status = status || 'Pending';
         existingAlert.slotTime = normalizedSlotTime || existingAlert.slotTime;
         if (computedSlotNumber) existingAlert.slotNumber = computedSlotNumber;
@@ -311,9 +314,10 @@ async function createAlert(req, res) {
       slotNumber: computedSlotNumber,
       registrationNumber,
       makeModel,
-      serviceName,
-      price,
-      duration,
+      serviceName: serviceName || 'MOT Test',
+      serviceCategory: req.body.serviceCategory || (serviceName && serviceName.toLowerCase().includes('mot') ? 'MOT' : 'Servicing'),
+      price: price !== undefined ? price : 45.00,
+      duration: duration || 45,
       status: status || 'Pending',
       date: bookingDate
     });
@@ -730,11 +734,132 @@ async function rescheduleAlert(req, res) {
   }
 }
 
+async function cancelAlert(req, res) {
+  try {
+    const alert = await Alert.findById(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Alert / Booking not found.' });
+    }
+
+    const userRole = req.user?.role;
+    let cancelledBy = 'Customer';
+    if ((userRole === 'garage_admin' || userRole === 'staff') && alert.garageId) {
+      if (String(alert.garageId) !== String(req.user.garageId)) {
+        return res.status(403).json({ error: 'Access denied. You can only manage bookings for your own garage.' });
+      }
+      cancelledBy = 'Garage';
+    } else if (userRole === 'customer') {
+      if (alert.customerId && String(alert.customerId) !== String(req.user.customerId)) {
+        return res.status(403).json({ error: 'Access denied. You can only cancel your own bookings.' });
+      }
+      cancelledBy = 'Customer';
+    } else if (userRole === 'admin') {
+      cancelledBy = 'Admin';
+    }
+
+    if (alert.type !== 'BOOKED') {
+      return res.status(400).json({ error: 'Only bookings can be cancelled.' });
+    }
+
+    if (alert.status === 'Cancelled') {
+      return res.status(400).json({ error: 'This booking has already been cancelled.' });
+    }
+
+    const cancellationReason = req.body?.reason || req.body?.cancellationReason || '';
+
+    alert.status = 'Cancelled';
+    alert.cancellationReason = cancellationReason;
+    alert.cancelledBy = cancelledBy;
+    alert.cancelledAt = new Date();
+    await alert.save();
+
+    const vehiclePart = alert.makeModel ? alert.makeModel.split(' - Slot: ')[0] : 'Vehicle';
+    const bookingDateStr = alert.date ? new Date(alert.date).toLocaleDateString('en-GB') : '';
+    const slotStr = alert.slotTime || (alert.makeModel && alert.makeModel.includes(' - Slot: ') ? alert.makeModel.split(' - Slot: ')[1] : '');
+
+    await Audit.create({
+      activity: 'MOT Booking Cancelled',
+      details: `${cancelledBy} cancelled booking for ${vehiclePart} (${alert.registrationNumber || ''}) on ${bookingDateStr} at ${slotStr}.${cancellationReason ? ` Reason: ${cancellationReason}` : ''}`
+    });
+
+    // 1. Resolve Customer Details
+    let cust = null;
+    try {
+      if (alert.customerId) {
+        cust = await Customer.findById(alert.customerId);
+      }
+      if (!cust && req.user?.customerId) {
+        cust = await Customer.findById(req.user.customerId);
+      }
+      if (!cust && req.user?.email) {
+        cust = {
+          email: req.user.email,
+          firstName: alert.customerName || req.user.username || 'Customer'
+        };
+      }
+    } catch (custErr) {
+      console.error('[alertController] Customer resolution error:', custErr.message);
+    }
+
+    // 2. Resolve Garage Details
+    let gar = null;
+    try {
+      if (alert.garageId) {
+        gar = await Garage.findById(alert.garageId._id || alert.garageId);
+      }
+      if (!gar && alert.stationId) {
+        gar = await Garage.findById(alert.stationId);
+      }
+    } catch (garErr) {
+      console.error('[alertController] Garage resolution error:', garErr.message);
+    }
+
+    console.log(`[alertController] Dispatching cancellation emails -> Customer: ${cust?.email || 'N/A'}, Garage: ${gar?.email || 'N/A'}`);
+
+    // 3. Dispatch Cancellation Emails to Customer and Garage
+    const emailTasks = [];
+    if (gar && gar.email) {
+      emailTasks.push(
+        sendBookingCancelledEmailGarage(alert, cust || { firstName: alert.customerName }, gar, cancelledBy, cancellationReason)
+          .then(res => console.log(`[alertController] Garage cancellation email sent: ${res}`))
+          .catch(err => console.error('[alertController] Failed to send garage cancellation email:', err.message))
+      );
+    } else {
+      console.warn('[alertController] Skipping garage email: No garage email found for alert', alert._id);
+    }
+
+    if (cust && cust.email) {
+      emailTasks.push(
+        sendBookingCancelledEmailCustomer(alert, cust, gar || {}, cancelledBy, cancellationReason)
+          .then(res => console.log(`[alertController] Customer cancellation email sent: ${res}`))
+          .catch(err => console.error('[alertController] Failed to send customer cancellation email:', err.message))
+      );
+    } else {
+      console.warn('[alertController] Skipping customer email: No customer email found for alert', alert._id);
+    }
+
+    // Await delivery before completing response to ensure emails are sent
+    if (emailTasks.length > 0) {
+      try {
+        await Promise.allSettled(emailTasks);
+      } catch (waitErr) {
+        console.error('[alertController] Error waiting for email dispatch:', waitErr.message);
+      }
+    }
+
+    res.json({ message: 'Booking cancelled successfully.', alert: formatDoc(alert) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   getAllAlerts,
   createAlert,
   approveAlert,
   acknowledgeAlert,
   rejectAlert,
-  rescheduleAlert
+  rescheduleAlert,
+  cancelAlert
 };
+

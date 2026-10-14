@@ -1,3 +1,10 @@
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (e) {
+  // Ignore
+}
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');

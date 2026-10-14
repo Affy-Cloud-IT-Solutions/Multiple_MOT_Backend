@@ -1,5 +1,13 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+
+// Ensure reliable DNS resolution for SMTP delivery on Windows/Node
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (dnsErr) {
+  // Ignore if custom DNS servers not permitted in environment
+}
 
 // Initialize Transporter
 let transporter = null;
@@ -111,16 +119,10 @@ async function verifySmtpConnection() {
 }
 
 /**
- * Base Email Layout - Clean, professional, UK-automotive enterprise template
+ * Base Email Layout - Clean, simple, easy-to-read template (no buttons or quick link blocks)
  */
-function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', contentHtml, ctaText, ctaUrl, secondaryActions = [] }) {
+function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', contentHtml }) {
   const currentYear = new Date().getFullYear();
-  const defaultActions = [
-    { label: 'Check Vehicle MOT', url: 'https://multiplemot.co.uk' },
-    { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
-    { label: 'My Vehicles & Bookings', url: 'https://multiplemot.co.uk/portal' },
-  ];
-  const navActions = secondaryActions.length > 0 ? secondaryActions : defaultActions;
 
   return `
 <!DOCTYPE html>
@@ -133,29 +135,23 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F1F5F9; margin: 0; padding: 0; color: #1E293B; }
     .wrapper { width: 100%; background-color: #F1F5F9; padding: 32px 16px; box-sizing: border-box; }
     .container { max-width: 580px; margin: 0 auto; background-color: #FFFFFF; border-radius: 12px; overflow: hidden; border: 1px solid #E2E8F0; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08); }
-    .header { background-color: #0B1F33; padding: 26px 24px; text-align: center; border-bottom: 3px solid #1677FF; }
+    .header { background-color: #0B1F33; padding: 24px; text-align: center; border-bottom: 3px solid #1677FF; }
     .brand-title { font-size: 20px; font-weight: 900; color: #FFFFFF; letter-spacing: 0.8px; margin: 0; text-transform: uppercase; }
     .brand-title span { color: #1677FF; }
-    .brand-sub { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1.2px; margin-top: 4px; font-weight: 600; }
-    .body { padding: 32px 28px; }
-    .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; }
-    .title { font-size: 19px; font-weight: 800; color: #0B1F33; margin: 0 0 14px 0; line-height: 1.4; }
-    .text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 14px 0; }
-    .card-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin: 18px 0; }
-    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #EDF2F7; font-size: 13px; }
+    .brand-sub { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: 600; }
+    .body { padding: 28px 24px; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 12px; }
+    .title { font-size: 19px; font-weight: 800; color: #0B1F33; margin: 0 0 12px 0; line-height: 1.4; }
+    .text { font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 12px 0; }
+    .card-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #EDF2F7; font-size: 13px; }
     .info-row:last-child { border-bottom: none; }
     .info-label { color: #64748B; font-weight: 600; }
     .info-val { color: #0B1F33; font-weight: 700; text-align: right; }
-    .plate-badge { display: inline-block; background-color: #FFD200; color: #111827; font-family: 'Courier New', Courier, monospace, sans-serif; font-weight: 900; padding: 3px 10px; border-radius: 4px; border: 1.5px solid #111827; font-size: 13px; letter-spacing: 1.2px; }
-    .btn-container { text-align: center; margin: 24px 0 16px 0; }
-    .btn-primary { display: inline-block; background-color: #1677FF; color: #FFFFFF !important; font-size: 14px; font-weight: 800; text-decoration: none; padding: 13px 32px; border-radius: 8px; letter-spacing: 0.3px; }
-    .app-nav-section { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 16px; margin-top: 24px; }
-    .app-nav-title { font-size: 11px; font-weight: 800; color: #64748B; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-    .app-nav-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-    .app-nav-link { display: inline-block; background-color: #FFFFFF; border: 1px solid #CBD5E1; color: #0B1F33 !important; font-size: 12px; font-weight: 700; text-decoration: none; padding: 7px 14px; border-radius: 6px; }
-    .notice-box { background-color: #EFF6FF; border-left: 4px solid #1677FF; border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 16px 0; font-size: 13px; line-height: 1.5; color: #1E3A8A; }
+    .plate-badge { display: inline-block; background-color: #FFD200; color: #111827; font-family: 'Courier New', Courier, monospace, sans-serif; font-weight: 900; padding: 3px 8px; border-radius: 4px; border: 1.5px solid #111827; font-size: 13px; letter-spacing: 1.2px; }
+    .notice-box { background-color: #EFF6FF; border-left: 4px solid #1677FF; border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 14px 0; font-size: 13px; line-height: 1.5; color: #1E3A8A; }
     .notice-title { font-weight: 800; margin-bottom: 2px; }
-    .footer { background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 20px 24px; text-align: center; font-size: 11px; color: #64748B; line-height: 1.6; }
+    .footer { background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 18px 20px; text-align: center; font-size: 11px; color: #64748B; line-height: 1.6; }
     .footer a { color: #1677FF; text-decoration: none; font-weight: 600; }
   </style>
 </head>
@@ -164,30 +160,16 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
     <div class="container">
       <div class="header">
         <h1 class="brand-title">MULTIPLE MOT <span>UK</span></h1>
-        <div class="brand-sub">DVSA Certified MOT Testing & Reminder Network</div>
+        <div class="brand-sub">UK MOT Reminders & Booking</div>
       </div>
       <div class="body">
         ${badgeText ? `<span class="badge" style="background-color: ${badgeColor}15; color: ${badgeColor}; border: 1px solid ${badgeColor}35;">${badgeText}</span>` : ''}
         <h2 class="title">${title}</h2>
         ${contentHtml}
-        
-        ${ctaText && ctaUrl ? `
-          <div class="btn-container">
-            <a href="${ctaUrl}" class="btn-primary" target="_blank">${ctaText}</a>
-          </div>
-        ` : ''}
-
-        <!-- Direct App Navigation Links -->
-        <div class="app-nav-section">
-          <div class="app-nav-title">Quick App Navigation</div>
-          <div class="app-nav-grid">
-            ${navActions.map(action => `<a href="${action.url}" class="app-nav-link" target="_blank">${action.label}</a>`).join('')}
-          </div>
-        </div>
       </div>
       <div class="footer">
-        <p>This is an automated operational notification from Multiple MOT UK.<br>© ${currentYear} Multiple MOT Network. Operating in compliance with DVSA testing standards.</p>
-        <p>Need assistance? Contact support at <a href="mailto:support@multiplemot.co.uk">support@multiplemot.co.uk</a> or manage your notifications in the <a href="https://multiplemot.co.uk/portal">Motorist Portal</a>.</p>
+        <p>This email was sent by Multiple MOT UK.<br>© ${currentYear} Multiple MOT UK. All rights reserved.</p>
+        <p>Need help? Email us at <a href="mailto:support@multiplemot.co.uk">support@multiplemot.co.uk</a></p>
       </div>
     </div>
   </div>
@@ -314,21 +296,20 @@ async function sendDiagnosticTestEmail(toEmail = null) {
   const from = `"${fromName}" <${fromAddress}>`;
 
   const html = createHtmlEmailLayout({
-    title: 'Multiple MOT UK - SMTP Diagnostic Test',
-    badgeText: 'Diagnostic Pass',
+    title: 'Multiple MOT UK - Email Test Successful',
+    badgeText: 'Test Passed',
     badgeColor: '#059669',
     contentHtml: `
-      <p class="text">This is an automated diagnostic confirmation test from the Multiple MOT UK live backend.</p>
+      <p class="text">This is a test email to confirm your email service is working properly.</p>
       <div class="card-box" style="border: 2px solid #059669;">
         <div class="info-row"><span class="info-label">Host:</span><span class="info-val">${verifyRes.host}</span></div>
-        <div class="info-row"><span class="info-label">Port / Protocol:</span><span class="info-val">Port ${verifyRes.portUsed} (${verifyRes.encryption})</span></div>
-        <div class="info-row"><span class="info-label">Authenticated User:</span><span class="info-val">${verifyRes.user}</span></div>
-        <div class="info-row"><span class="info-label">Recipient:</span><span class="info-val">${targetEmail}</span></div>
-        <div class="info-row"><span class="info-label">Timestamp:</span><span class="info-val">${timestamp}</span></div>
+        <div class="info-row"><span class="info-label">Port:</span><span class="info-val">Port ${verifyRes.portUsed} (${verifyRes.encryption})</span></div>
+        <div class="info-row"><span class="info-label">Sent To:</span><span class="info-val">${targetEmail}</span></div>
+        <div class="info-row"><span class="info-label">Time:</span><span class="info-val">${timestamp}</span></div>
       </div>
       <div class="notice-box">
-        <div class="notice-title">Operational Status: Verified</div>
-        <div>Your Hostinger SMTP integration is fully configured and operational. Reminders, booking confirmations, and registration alerts will be delivered automatically.</div>
+        <div class="notice-title">Status: Ready</div>
+        <div>All automated MOT reminders and booking emails are ready to send.</div>
       </div>
     `,
     ctaText: 'Open Motorist Portal',
@@ -341,9 +322,9 @@ async function sendDiagnosticTestEmail(toEmail = null) {
       from,
       sender: fromAddress,
       to: targetEmail,
-      subject: `[Diagnostic Test] Multiple MOT UK SMTP Verified (${timestamp})`,
+      subject: `[Test Email] Multiple MOT UK Email Service Verified (${timestamp})`,
       html,
-      text: `Multiple MOT UK SMTP Diagnostic Test passed at ${timestamp}. Sent via ${verifyRes.host}:${verifyRes.portUsed} (${verifyRes.encryption})`,
+      text: `Multiple MOT UK email test passed at ${timestamp}. Sent via ${verifyRes.host}:${verifyRes.portUsed} (${verifyRes.encryption})`,
       envelope: {
         from: fromAddress,
         to: [targetEmail]
@@ -376,37 +357,34 @@ async function sendDiagnosticTestEmail(toEmail = null) {
 // =========================================================================
 
 async function sendCustomerWelcomeEmail(customer) {
-  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Valued Motorist';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const html = createHtmlEmailLayout({
-    title: `Welcome to Multiple MOT UK, ${customerName}`,
-    badgeText: 'Account Verified',
+    title: 'Welcome to Multiple MOT UK',
+    badgeText: 'Account Created',
     badgeColor: '#059669',
     contentHtml: `
-      <p class="text">Thank you for registering with Multiple MOT UK, the premier platform for automated MOT monitoring, early renewal management, and certified test bookings.</p>
+      <p class="text">Welcome to Multiple MOT UK, <strong>${customerName}</strong>! Your account is now active and ready to use.</p>
+      <p class="text">You can now save your cars, get free MOT reminders before they expire, and book MOT tests with trusted local garages.</p>
       <div class="card-box">
-        <div class="info-row"><span class="info-label">Account Name:</span><span class="info-val">${customerName}</span></div>
-        <div class="info-row"><span class="info-label">Registered Email:</span><span class="info-val">${customer.email}</span></div>
-        <div class="info-row"><span class="info-label">Alert Channel:</span><span class="info-val">${customer.preferredContact || 'Email'}</span></div>
-      </div>
-      <div class="notice-box">
-        <div class="notice-title">Automated Expiry Alerts Active</div>
-        <div>Your vehicles will now receive scheduled renewal reminders at 45, 30, 15, and 7 days prior to MOT expiry.</div>
+        <div class="info-row"><span class="info-label">Name:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Email:</span><span class="info-val">${customer.email}</span></div>
+        <div class="info-row"><span class="info-label">MOT Reminders:</span><span class="info-val" style="color: #059669;">Active (45, 30, 15 & 7 days before expiry)</span></div>
       </div>
     `,
-    ctaText: 'Open Motorist Portal',
+    ctaText: 'Go to My Account',
     ctaUrl: 'https://multiplemot.co.uk/portal',
     secondaryActions: [
-      { label: 'Register a Vehicle', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Check MOT History', url: 'https://multiplemot.co.uk' },
+      { label: 'Add a Car', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Local Garages', url: 'https://multiplemot.co.uk/garages' },
+      { label: 'Check MOT Date', url: 'https://multiplemot.co.uk' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: 'Welcome to Multiple MOT UK - Account Confirmation',
+    subject: 'Welcome to Multiple MOT UK - Account Created',
     html,
-    text: `Welcome to Multiple MOT UK, ${customerName}. Your account (${customer.email}) is active and configured for automated MOT reminders.`
+    text: `Welcome to Multiple MOT UK, ${customerName}! Your account (${customer.email}) is ready and set up for free MOT reminders.`
   });
 }
 
@@ -414,33 +392,32 @@ async function sendGarageRegistrationEmail(garage, ownerUser) {
   const garageName = garage.name || 'Your Garage';
   const ownerName = ownerUser?.username || 'Garage Manager';
   const html = createHtmlEmailLayout({
-    title: `Application Received: ${garageName}`,
-    badgeText: 'Under Verification',
+    title: 'Garage Sign-Up Received',
+    badgeText: 'Under Review',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">Dear ${ownerName},</p>
-      <p class="text">Thank you for registering <strong>${garageName}</strong> on the Multiple MOT UK testing network. Your application is currently under compliance review.</p>
+      <p class="text">Hello <strong>${ownerName}</strong>, we have received your sign-up application for <strong>${garageName}</strong>.</p>
+      <p class="text">Our team is reviewing your garage details. We will email you as soon as your account is approved and live on Multiple MOT UK.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${garage.vtsNumber || 'Provided in documents'}</span></div>
-        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || 'United Kingdom'} (${garage.postcode || ''})</span></div>
-        <div class="info-row"><span class="info-label">Verification:</span><span class="info-val" style="color: #D97706;">Pending Compliance Audit</span></div>
+        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${garage.vtsNumber || 'Provided'}</span></div>
+        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || 'UK'} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Waiting for Review ⏳</span></div>
       </div>
-      <p class="text">Our compliance team is verifying your testing station credentials. You will receive an email confirmation as soon as your account is activated.</p>
     `,
-    ctaText: 'Access Garage Dashboard',
+    ctaText: 'Open Garage Portal',
     ctaUrl: 'https://multiplemot.co.uk/admin',
     secondaryActions: [
       { label: 'Garage Portal', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Contact Support', url: 'mailto:support@multiplemot.co.uk' },
+      { label: 'Help & Support', url: 'mailto:support@multiplemot.co.uk' },
     ]
   });
 
   return sendEmail({
     to: garage.email || ownerUser?.email,
-    subject: `Garage Registration Received: ${garageName}`,
+    subject: `[Application Received] ${garageName} - Multiple MOT UK`,
     html,
-    text: `Your garage registration for ${garageName} has been received and is pending compliance audit.`
+    text: `Hello ${ownerName}, we have received your application for ${garageName}. It is currently under review.`
   });
 }
 
@@ -448,32 +425,31 @@ async function sendSuperAdminNewGarageAlert(garage) {
   const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@gmail.com';
   const garageName = garage.name || 'New MOT Station';
   const html = createHtmlEmailLayout({
-    title: `New Station Application: ${garageName}`,
-    badgeText: 'Admin Action Required',
+    title: `New Garage Sign-Up: ${garageName}`,
+    badgeText: 'Review Needed',
     badgeColor: '#DC2626',
     contentHtml: `
-      <p class="text">A new vehicle testing station has submitted registration documents and is waiting for compliance authorization.</p>
+      <p class="text">A new garage, <strong>${garageName}</strong>, has just signed up and is waiting for your review and approval.</p>
       <div class="card-box">
-        <div class="info-row"><span class="info-label">Station Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Contact Email:</span><span class="info-val">${garage.email || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Email:</span><span class="info-val">${garage.email || 'N/A'}</span></div>
         <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">VTS Identifier:</span><span class="info-val">${garage.vtsNumber || 'See Uploaded Docs'}</span></div>
-        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''} ${garage.city || ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${garage.vtsNumber || 'See Docs'}</span></div>
+        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || ''} (${garage.postcode || ''})</span></div>
       </div>
     `,
-    ctaText: 'Review Garage Application',
+    ctaText: 'Review Garage in Admin Panel',
     ctaUrl: 'https://multiplemot.co.uk/super-admin',
     secondaryActions: [
-      { label: 'Super Admin Console', url: 'https://multiplemot.co.uk/super-admin' },
-      { label: 'Pending Queue', url: 'https://multiplemot.co.uk/super-admin' },
+      { label: 'Admin Dashboard', url: 'https://multiplemot.co.uk/super-admin' },
     ]
   });
 
   return sendEmail({
     to: superAdminEmail,
-    subject: `[Admin Alert] New Garage Registration: ${garageName}`,
+    subject: `[Admin Alert] New Garage Sign-Up: ${garageName}`,
     html,
-    text: `A new garage (${garageName}) has registered and requires compliance review.`
+    text: `A new garage (${garageName}) has signed up on Multiple MOT UK and needs your review.`
   });
 }
 
@@ -481,40 +457,40 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
   const isApproved = status === 'Approved';
   const garageName = garage.name || 'Your Garage';
   const html = createHtmlEmailLayout({
-    title: isApproved ? `Station Approved: ${garageName}` : `Application Update: ${garageName}`,
-    badgeText: isApproved ? 'Station Live' : 'Application Unsuccessful',
+    title: isApproved ? `Garage Approved: ${garageName}` : `Application Update: ${garageName}`,
+    badgeText: isApproved ? 'Garage Live' : 'Application Update',
     badgeColor: isApproved ? '#059669' : '#DC2626',
     contentHtml: `
       <p class="text">
         ${isApproved 
-          ? `Your MOT testing station <strong>${garageName}</strong> has been verified and activated on Multiple MOT UK. Motorists can now view your testing bays and book appointment slots.` 
-          : `Your registration application for <strong>${garageName}</strong> could not be approved at this time.`}
+          ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Multiple MOT UK. Drivers can now find your garage and book MOT test slots online.` 
+          : `We are sorry, but your garage application for <strong>${garageName}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved && reason ? `
         <div class="card-box" style="border-left: 4px solid #DC2626;">
-          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason for Decision:</div>
+          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason:</div>
           <div style="font-size: 13px; color: #334155;">${reason}</div>
         </div>
       ` : ''}
       <div class="card-box">
-        <div class="info-row"><span class="info-label">Station Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'};">${status}</span></div>
+        <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? 'Approved & Live ✅' : 'Rejected ❌'}</span></div>
         <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || ''} (${garage.postcode || ''})</span></div>
       </div>
     `,
-    ctaText: isApproved ? 'Open Garage Dashboard' : 'Contact Support',
+    ctaText: isApproved ? 'Go to Garage Dashboard' : 'Contact Support',
     ctaUrl: isApproved ? 'https://multiplemot.co.uk/admin' : 'mailto:support@multiplemot.co.uk',
     secondaryActions: [
       { label: 'Garage Dashboard', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Manage Slot Schedule', url: 'https://multiplemot.co.uk/admin' },
+      { label: 'Help & Support', url: 'mailto:support@multiplemot.co.uk' },
     ]
   });
 
   return sendEmail({
     to: garage.email,
-    subject: isApproved ? `[Approved] ${garageName} is now active on Multiple MOT UK` : `[Application Update] ${garageName}`,
+    subject: isApproved ? `[Approved] ${garageName} is live on Multiple MOT UK` : `[Update] Application for ${garageName}`,
     html,
-    text: isApproved ? `Your garage ${garageName} has been approved and is active.` : `Your garage application for ${garageName} was not approved: ${reason}`
+    text: isApproved ? `Great news! Your garage ${garageName} is approved and live on Multiple MOT UK.` : `Your application for ${garageName} was not approved: ${reason}`
   });
 }
 
@@ -526,75 +502,73 @@ async function sendBookingRequestEmailCustomer(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const makeModel = booking.makeModel || '';
   const garageName = garage?.name || 'Selected Garage';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const slotTime = booking.slotTime || 'Selected Slot';
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Request Logged',
-    badgeText: 'Awaiting Garage Confirmation',
+    title: 'MOT Booking Request Sent',
+    badgeText: 'Waiting for Garage',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
-      <p class="text">Your MOT appointment request has been submitted to <strong>${garageName}</strong>. The testing station staff will review and confirm your reserved slot shortly.</p>
+      <p class="text">We received your MOT booking request for car <strong>${reg}</strong> at <strong>${garageName}</strong>.</p>
+      <p class="text">The garage will review your request and confirm your time slot soon. We will email you as soon as they confirm.</p>
       <div class="card-box">
-        <div class="info-row"><span class="info-label">Vehicle Registration:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${makeModel}</span></div>
-        <div class="info-row"><span class="info-label">Testing Station:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Requested Date:</span><span class="info-val">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Slot Time:</span><span class="info-val">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Service Fee:</span><span class="info-val">${booking.serviceName || 'MOT Test'} (£${booking.price || 45})</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${makeModel}</span></div>
+        <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Date:</span><span class="info-val">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Time:</span><span class="info-val">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${booking.serviceName || 'MOT Test'} (£${booking.price || 45})</span></div>
       </div>
-      <p class="text">You will receive an instant email confirmation as soon as the station accepts your booking.</p>
     `,
     ctaText: 'View My Bookings',
     ctaUrl: 'https://multiplemot.co.uk/portal',
     secondaryActions: [
-      { label: 'My Bookings History', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Other Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Vehicle Dashboard', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'My Bookings', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: `Booking Request: MOT for ${reg} at ${garageName}`,
+    subject: `[Booking Request] MOT for ${reg} at ${garageName}`,
     html,
-    text: `Your MOT booking request for ${reg} on ${bookingDate} at ${garageName} has been submitted.`
+    text: `Your MOT booking request for ${reg} on ${bookingDate} at ${garageName} has been sent.`
   });
 }
 
 async function sendBookingRequestEmailGarage(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const slotTime = booking.slotTime || 'Selected Slot';
 
   const html = createHtmlEmailLayout({
-    title: 'New MOT Appointment Request',
-    badgeText: 'Action Required',
+    title: 'New MOT Booking Request',
+    badgeText: 'Action Needed',
     badgeColor: '#1677FF',
     contentHtml: `
-      <p class="text">A new MOT booking request has been submitted for your testing bays.</p>
+      <p class="text">You have a new MOT booking request for car <strong>${reg}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong>.</p>
+      <p class="text">Please log in to your garage dashboard to accept this booking or propose a new time slot.</p>
       <div class="card-box">
-        <div class="info-row"><span class="info-label">Motorist:</span><span class="info-val">${customerName}</span></div>
-        <div class="info-row"><span class="info-label">Contact Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">Vehicle Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
         <div class="info-row"><span class="info-label">Requested Date:</span><span class="info-val">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Requested Slot:</span><span class="info-val">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Service Type:</span><span class="info-val">${booking.serviceName || 'MOT Test'}</span></div>
+        <div class="info-row"><span class="info-label">Requested Time:</span><span class="info-val">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${booking.serviceName || 'MOT Test'} (£${booking.price || 45})</span></div>
       </div>
-      <p class="text">Please confirm or reschedule this booking in your garage management console.</p>
     `,
-    ctaText: 'Review in Garage Portal',
+    ctaText: 'Review & Accept Booking',
     ctaUrl: 'https://multiplemot.co.uk/admin',
     secondaryActions: [
-      { label: 'Confirm Appointment', url: 'https://multiplemot.co.uk/admin' },
+      { label: 'Garage Bookings', url: 'https://multiplemot.co.uk/admin' },
       { label: 'Garage Calendar', url: 'https://multiplemot.co.uk/admin' },
     ]
   });
 
   return sendEmail({
     to: garage.email,
-    subject: `[Booking Request] MOT for ${reg} on ${bookingDate} (${slotTime})`,
+    subject: `[New Booking Request] MOT for ${reg} on ${bookingDate} (${slotTime})`,
     html,
     text: `New MOT booking request from ${customerName} for ${reg} on ${bookingDate} at ${slotTime}.`
   });
@@ -603,77 +577,74 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
 async function sendBookingConfirmedEmail(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || 'Your Garage';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const slotTime = booking.slotTime || 'Selected Slot';
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Appointment Confirmed',
-    badgeText: 'Booking Confirmed',
+    title: 'MOT Booking Confirmed',
+    badgeText: 'Confirmed',
     badgeColor: '#059669',
     contentHtml: `
-      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
-      <p class="text">Your MOT appointment with <strong>${garageName}</strong> has been confirmed.</p>
+      <p class="text">Great news! Your MOT booking for <strong>${reg}</strong> at <strong>${garageName}</strong> is confirmed.</p>
       <div class="card-box" style="border: 2px solid #059669;">
-        <div class="info-row"><span class="info-label">Vehicle Registration:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
-        <div class="info-row"><span class="info-label">Appointment Date:</span><span class="info-val" style="color: #059669; font-size: 14px;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Confirmed Slot:</span><span class="info-val" style="color: #059669; font-size: 14px;">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Testing Station:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Station Address:</span><span class="info-val">${garage.address || ''}, ${garage.city || ''} (${garage.postcode || ''})</span></div>
-        <div class="info-row"><span class="info-label">Station Telephone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Date:</span><span class="info-val" style="color: #059669; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Time:</span><span class="info-val" style="color: #059669; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}, ${garage.city || ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
       </div>
       <div class="notice-box">
-        <div class="notice-title">Arrival Instructions</div>
-        <div>Please arrive at least 10 minutes prior to your testing slot. Bring your vehicle registration document (V5C) if available.</div>
+        <div class="notice-title">Helpful Tip</div>
+        <div>Please try to arrive 10 minutes before your time slot. Bring your car log book (V5C) if you have it.</div>
       </div>
     `,
-    ctaText: 'View Driving Directions',
+    ctaText: 'Get Driving Directions',
     ctaUrl: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${garage.name} ${garage.address} ${garage.postcode}`)}`,
     secondaryActions: [
-      { label: 'View in My Portal', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Reschedule Slot', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Approved Garages', url: 'https://multiplemot.co.uk/garages' },
+      { label: 'View in My Account', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Change Booking', url: 'https://multiplemot.co.uk/portal' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: `Confirmed: MOT for ${reg} at ${garageName} on ${bookingDate}`,
+    subject: `[Confirmed] MOT for ${reg} at ${garageName} on ${bookingDate}`,
     html,
-    text: `Your MOT appointment for ${reg} has been confirmed at ${garageName} for ${bookingDate} at ${slotTime}.`
+    text: `Your MOT appointment for ${reg} is confirmed at ${garageName} for ${bookingDate} at ${slotTime}.`
   });
 }
 
 async function sendBookingRejectedEmail(booking, customer, garage, reason = '') {
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || 'Selected Garage';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Update: Slot Unavailable',
-    badgeText: 'Slot Cancelled',
+    title: 'MOT Booking Not Available',
+    badgeText: 'Slot Not Available',
     badgeColor: '#DC2626',
     contentHtml: `
-      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
-      <p class="text"><strong>${garageName}</strong> was unable to accommodate your MOT booking request for <strong>${reg}</strong> on ${bookingDate}.</p>
+      <p class="text">Your MOT booking request for <strong>${reg}</strong> at <strong>${garageName}</strong> on <strong>${bookingDate}</strong> could not be accepted.</p>
       ${reason ? `
         <div class="card-box" style="border-left: 4px solid #DC2626;">
-          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Station Note:</div>
+          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Note from Garage:</div>
           <div style="font-size: 13px; color: #334155;">${reason}</div>
         </div>
       ` : ''}
-      <p class="text">You can select another available slot or choose from certified alternative garages in your area.</p>
+      <p class="text">You can easily pick another time or choose a different local garage.</p>
     `,
-    ctaText: 'Browse Available Slots',
+    ctaText: 'Find Another Garage or Time',
     ctaUrl: 'https://multiplemot.co.uk/garages',
     secondaryActions: [
-      { label: 'Find Nearby Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'My Vehicles', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
+      { label: 'My Account', url: 'https://multiplemot.co.uk/portal' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: `Update on MOT Booking for ${reg} at ${garageName}`,
+    subject: `[Not Available] MOT booking for ${reg} at ${garageName}`,
     html,
     text: `Your MOT booking for ${reg} on ${bookingDate} could not be confirmed by ${garageName}. ${reason ? `Reason: ${reason}` : ''}`
   });
@@ -682,33 +653,28 @@ async function sendBookingRejectedEmail(booking, customer, garage, reason = '') 
 async function sendBookingRescheduledEmailCustomer(booking, customer, garage, isApproved = false) {
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || 'Selected Garage';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
 
   const html = createHtmlEmailLayout({
-    title: isApproved ? 'MOT Booking Rescheduled & Confirmed' : 'MOT Rescheduling Request Submitted',
-    badgeText: isApproved ? 'Rescheduled & Confirmed' : 'Reschedule Pending',
+    title: isApproved ? 'MOT Booking Rescheduled' : 'Reschedule Request Sent',
+    badgeText: isApproved ? 'New Time Confirmed' : 'Waiting for Garage',
     badgeColor: isApproved ? '#059669' : '#D97706',
     contentHtml: `
-      <p class="text">Dear ${customer.firstName || 'Customer'},</p>
-      <p class="text">${isApproved 
-        ? `Your MOT appointment with <strong>${garageName}</strong> has been successfully rescheduled.` 
-        : `Your request to reschedule your MOT appointment with <strong>${garageName}</strong> has been submitted.`}
+      <p class="text">
+        ${isApproved 
+          ? `Your MOT appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been changed to a new date and time.` 
+          : `Your request to change your MOT appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been sent to the garage.`}
       </p>
       <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#D97706'};">
-        <div class="info-row"><span class="info-label">Vehicle Registration:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
-        <div class="info-row"><span class="info-label">New Appointment Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-size: 14px; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">New Time Slot:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-size: 14px; font-weight: 800;">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Testing Station:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Station Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>
-        <div class="info-row"><span class="info-label">Station Telephone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">New Time:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
+        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>
       </div>
-      <p class="text">${isApproved 
-        ? 'Please arrive at least 10 minutes prior to your rescheduled testing slot.' 
-        : 'Garage staff will review your new appointment slot shortly.'}
-      </p>
     `,
-    ctaText: 'View in Customer Portal',
+    ctaText: 'View in My Account',
     ctaUrl: 'https://multiplemot.co.uk/portal',
     secondaryActions: [
       { label: 'My Bookings', url: 'https://multiplemot.co.uk/portal' },
@@ -718,7 +684,7 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
 
   return sendEmail({
     to: customer.email,
-    subject: `Rescheduled: MOT for ${reg} at ${garageName} on ${bookingDate}`,
+    subject: `[Rescheduled] MOT for ${reg} at ${garageName} (${bookingDate})`,
     html,
     text: `Your MOT appointment for ${reg} has been rescheduled to ${bookingDate} at ${slotTime} with ${garageName}.`
   });
@@ -727,38 +693,113 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
 async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
-  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Scheduled Date';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Rescheduled by Customer',
-    badgeText: 'Booking Rescheduled',
+    title: 'MOT Booking Time Changed',
+    badgeText: 'Time Changed',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">A customer has rescheduled their existing MOT appointment.</p>
+      <p class="text">The customer <strong>${customerName}</strong> has requested a new date/time for car <strong>${reg}</strong>.</p>
       <div class="card-box" style="border-left: 4px solid #D97706;">
-        <div class="info-row"><span class="info-label">Motorist:</span><span class="info-val">${customerName}</span></div>
-        <div class="info-row"><span class="info-label">Contact Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">Vehicle Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
-        <div class="info-row"><span class="info-label">New Requested Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">New Requested Slot:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Service Type:</span><span class="info-val">${booking.serviceName || 'MOT Test'}</span></div>
+        <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">New Time Slot:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTime}</span></div>
       </div>
-      <p class="text">Please review the updated calendar schedule in your management console.</p>
     `,
-    ctaText: 'Review in Garage Portal',
+    ctaText: 'Open Garage Schedule',
     ctaUrl: 'https://multiplemot.co.uk/admin',
     secondaryActions: [
-      { label: 'Manage Bookings', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'View Calendar', url: 'https://multiplemot.co.uk/admin' },
+      { label: 'Garage Bookings', url: 'https://multiplemot.co.uk/admin' },
+      { label: 'Garage Calendar', url: 'https://multiplemot.co.uk/admin' },
     ]
   });
 
   return sendEmail({
     to: garage.email,
-    subject: `[Rescheduled] MOT for ${reg} on ${bookingDate} (${slotTime})`,
+    subject: `[Time Changed] MOT for ${reg} on ${bookingDate} (${slotTime})`,
     html,
-    text: `Customer ${customerName} has rescheduled their MOT for ${reg} to ${bookingDate} at ${slotTime}.`
+    text: `Customer ${customerName} has changed their MOT for ${reg} to ${bookingDate} at ${slotTime}.`
+  });
+}
+
+async function sendBookingCancelledEmailCustomer(booking, customer, garage, cancelledBy = 'Customer', reason = '') {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const garageName = garage?.name || garage?.garageName || booking.stationName || 'Selected Garage';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const serviceName = booking.serviceName || 'MOT Test';
+
+  const html = createHtmlEmailLayout({
+    title: 'Booking Cancelled',
+    badgeText: 'Cancelled',
+    badgeColor: '#EF4444',
+    contentHtml: `
+      <p class="text">
+        Your booking for <strong>${serviceName}</strong> (${reg}) at <strong>${garageName}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been cancelled.
+      </p>
+      <div class="card-box" style="border: 2px solid #EF4444;">
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
+        ${garage.address ? `<div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>` : ''}
+        ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
+      </div>
+      <p class="text" style="color: #64748B; font-size: 13px; margin-top: 12px;">
+        No further action is required. If you wish to re-book for another date or time, you can do so through the mobile app.
+      </p>
+    `
+  });
+
+  return sendEmail({
+    to: customer.email,
+    subject: `[Cancelled] ${serviceName} Booking for ${reg} on ${bookingDate}`,
+    html,
+    text: `Your ${serviceName} appointment for ${reg} on ${bookingDate} at ${slotTime} with ${garageName} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`
+  });
+}
+
+async function sendBookingCancelledEmailGarage(booking, customer, garage, cancelledBy = 'Customer', reason = '') {
+  const reg = booking.registrationNumber || 'Vehicle';
+  const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || booking.customerName || 'Customer';
+  const customerPhone = customer?.mobile || customer?.phone || 'N/A';
+  const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const serviceName = booking.serviceName || 'MOT Test';
+
+  const html = createHtmlEmailLayout({
+    title: 'Booking Cancelled - Slot Freed',
+    badgeText: 'Slot Released',
+    badgeColor: '#EF4444',
+    contentHtml: `
+      <p class="text">
+        The booking for <strong>${reg}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been <strong>cancelled</strong> by ${cancelledBy}.
+      </p>
+      <div class="card-box" style="border-left: 4px solid #EF4444;">
+        <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${customerName}</span></div>
+        <div class="info-row"><span class="info-label">Contact:</span><span class="info-val">${customerPhone}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
+        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
+      </div>
+      <p class="text" style="color: #059669; font-weight: 600; margin-top: 10px;">
+        ✅ This slot (${slotTime} on ${bookingDate}) has been automatically released and is now open for new bookings.
+      </p>
+    `
+  });
+
+  return sendEmail({
+    to: garage.email,
+    subject: `[Booking Cancelled] ${reg} - Slot Released for ${bookingDate} (${slotTime})`,
+    html,
+    text: `Booking for ${reg} on ${bookingDate} at ${slotTime} has been cancelled by ${cancelledBy}. This slot is now available.${reason ? ` Reason: ${reason}` : ''}`
   });
 }
 
@@ -767,175 +808,173 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
 // =========================================================================
 
 async function sendVehiclePendingEmail(customer, vehicle) {
-  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Motorist';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const reg = vehicle.registrationNumber || 'Vehicle';
   const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || 'Vehicle';
   const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
 
   const html = createHtmlEmailLayout({
-    title: `Vehicle Registration Received: ${reg}`,
-    badgeText: 'Pending Approval',
+    title: `Car Added: ${reg}`,
+    badgeText: 'Waiting for Approval',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">Dear ${customerName},</p>
-      <p class="text">Thank you for adding your vehicle <span class="plate-badge">${reg}</span> (<strong>${makeModel}</strong>) to your Multiple MOT UK account.</p>
-      <p class="text">Your vehicle registration has been logged and is currently <strong>awaiting garage verification</strong>. Once approved, automated MOT monitoring and expiry reminders will activate immediately.</p>
+      <p class="text">Your car <strong>${reg}</strong> (${makeModel}) has been added to your account.</p>
+      <p class="text">The garage is checking your car details. Once approved, your automatic MOT reminders will turn on.</p>
       <div class="card-box" style="border: 2px solid #D97706;">
-        <div class="info-row"><span class="info-label">Registration Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
-        <div class="info-row"><span class="info-label">Make & Model:</span><span class="info-val">${makeModel}</span></div>
+        <div class="info-row"><span class="info-label">Number Plate:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
+        <div class="info-row"><span class="info-label">Car Model:</span><span class="info-val">${makeModel}</span></div>
         <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${motDateFormatted}</span></div>
-        <div class="info-row"><span class="info-label">Verification Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Pending Approval ⏳</span></div>
-      </div>
-      <div class="notice-box" style="border-left-color: #D97706; background-color: #FFFBEB; color: #92400E;">
-        <div class="notice-title">What Happens Next?</div>
-        <div>Testing station staff will review and approve your vehicle registration. You will receive an instant email notification as soon as your vehicle is active.</div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Waiting for Approval ⏳</span></div>
       </div>
     `,
-    ctaText: 'View My Vehicles in Portal',
+    ctaText: 'View My Cars',
     ctaUrl: 'https://multiplemot.co.uk/portal',
     secondaryActions: [
-      { label: 'My Vehicles', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Check MOT History', url: 'https://multiplemot.co.uk' },
+      { label: 'My Cars', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: `Vehicle Registration Pending: ${reg} (${makeModel})`,
+    subject: `[Car Added] ${reg} (${makeModel}) - Multiple MOT UK`,
     html,
-    text: `Dear ${customerName}, your vehicle registration for ${reg} (${makeModel}) has been received and is pending garage approval.`
+    text: `Your car ${reg} (${makeModel}) has been added and is waiting for garage approval.`
   });
 }
 
 async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', reason = '') {
   const isApproved = status === 'Approved' || status === 'Active';
-  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Motorist';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const reg = vehicle.registrationNumber || 'Vehicle';
   const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || vehicle.makeModel || 'Vehicle';
   const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
 
   const html = createHtmlEmailLayout({
-    title: isApproved ? `🎉 Congratulations! Your vehicle ${reg} is Verified & Approved` : `Vehicle Registration Update: ${reg}`,
-    badgeText: isApproved ? 'Vehicle Active & Approved' : 'Registration Issue',
+    title: isApproved ? `Car Approved: ${reg}` : `Car Update: ${reg}`,
+    badgeText: isApproved ? 'Car Approved' : 'Approval Issue',
     badgeColor: isApproved ? '#059669' : '#DC2626',
     contentHtml: `
-      <p class="text">Dear ${customerName},</p>
       <p class="text">
         ${isApproved 
-          ? `Congratulations! Your vehicle <span class="plate-badge">${reg}</span> (<strong>${makeModel}</strong>) has been <strong>verified and approved</strong> on your Multiple MOT UK motorist account.` 
-          : `Your vehicle registration request for <span class="plate-badge">${reg}</span> could not be verified by the garage.`}
+          ? `Great news! Your car <strong>${reg}</strong> (${makeModel}) has been <strong>approved</strong> on Multiple MOT UK.` 
+          : `We are sorry, but your car <strong>${reg}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved && reason ? `
         <div class="card-box" style="border-left: 4px solid #DC2626;">
-          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason for Decision:</div>
+          <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason:</div>
           <div style="font-size: 13px; color: #334155;">${reason}</div>
         </div>
       ` : ''}
       <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#DC2626'};">
-        <div class="info-row"><span class="info-label">Registration Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
-        <div class="info-row"><span class="info-label">Make & Model:</span><span class="info-val">${makeModel}</span></div>
+        <div class="info-row"><span class="info-label">Number Plate:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
+        <div class="info-row"><span class="info-label">Car Model:</span><span class="info-val">${makeModel}</span></div>
         <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${motDateFormatted}</span></div>
-        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? 'Approved & Active ✅' : 'Rejected ❌'}</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? 'Approved ✅' : 'Rejected ❌'}</span></div>
       </div>
       ${isApproved ? `
         <div class="notice-box">
-          <div class="notice-title">Automated DVSA Reminders Active</div>
-          <div>Your vehicle is now actively monitored by Multiple MOT UK. You will receive automated scheduled reminders at 45, 30, 15, and 7 days prior to expiry.</div>
+          <div class="notice-title">Free MOT Reminders are On</div>
+          <div>We will send you reminders at 45, 30, 15, and 7 days before your MOT expires so you never forget to renew.</div>
         </div>
       ` : ''}
     `,
-    ctaText: isApproved ? 'Manage Vehicle in Portal' : 'Contact Support',
+    ctaText: isApproved ? 'Book an MOT Test' : 'Contact Support',
     ctaUrl: isApproved ? 'https://multiplemot.co.uk/portal' : 'mailto:support@multiplemot.co.uk',
     secondaryActions: [
-      { label: 'Book MOT Test Slot', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Check Vehicle MOT', url: 'https://multiplemot.co.uk' },
+      { label: 'Book MOT Test', url: 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
     ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: isApproved ? `Congratulations! Your vehicle ${reg} is Verified & Approved (${makeModel})` : `Vehicle Registration Update: ${reg}`,
+    subject: isApproved ? `[Approved] Car ${reg} (${makeModel}) - Multiple MOT UK` : `[Update] Car ${reg} Registration`,
     html,
-    text: isApproved ? `Congratulations ${customerName}! Your vehicle ${reg} (${makeModel}) has been approved and is active.` : `Your vehicle registration for ${reg} was not approved: ${reason}`
+    text: isApproved ? `Great news! Your car ${reg} (${makeModel}) is approved on Multiple MOT UK.` : `Your car ${reg} was not approved: ${reason}`
   });
 }
 
 async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFormatted, serviceLink, stage = '') {
   const reg = vehicle.registrationNumber || 'Vehicle';
-  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Motorist';
+  const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const vehicleDesc = `${vehicle.make || ''} ${vehicle.model || ''}`.trim();
 
-  let badgeText = 'DVSA Renewal Reminder';
+  let badgeText = 'MOT Reminder';
   let badgeColor = '#1677FF';
   let title = `MOT Due in ${daysLeft} Days: ${reg}`;
-  let subject = `MOT Reminder: ${reg} expires in ${daysLeft} days (${expiryDateFormatted})`;
+  let subject = `[MOT Due] ${reg} expires in ${daysLeft} days (${expiryDateFormatted})`;
+  let openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>.`;
   let tipHtml = `
     <div class="notice-box">
-      <div class="notice-title">DVSA 30-Day Early Renewal Framework</div>
-      <div>You can test your vehicle up to one month (minus a day) before the expiry date and preserve your renewal anniversary date.</div>
+      <div class="notice-title">Good to Know</div>
+      <div>You can test your car up to 1 month early without losing any days on your current certificate.</div>
     </div>
   `;
 
   if (daysLeft > 30) {
     // 45 Days Pre-Booking Alert
-    badgeText = '45-Day Advance Notice';
+    badgeText = '45 Days to Expiry';
     badgeColor = '#1677FF';
     title = `Advance Notice: MOT Due in ${daysLeft} Days (${reg})`;
-    subject = `Advance Alert: ${reg} MOT expires on ${expiryDateFormatted} (${daysLeft} days left)`;
+    subject = `[Advance Notice] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
+    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. You can book your test slot early.`;
     tipHtml = `
       <div class="notice-box">
-        <div class="notice-title">Pre-Booking Available</div>
-        <div>You can plan ahead and reserve your test slot now. Selecting a slot within the 30-day window ensures you secure your preferred garage while keeping your annual anniversary date.</div>
+        <div class="notice-title">Plan Ahead</div>
+        <div>Booking early lets you pick your preferred garage, date, and time before slots get booked up.</div>
       </div>
     `;
   } else if (daysLeft > 15) {
-    // 30 Days DVSA Window Opened
-    badgeText = 'DVSA 30-Day Window Open';
+    // 30 Days Early Renewal Window Opened
+    badgeText = 'Early Renewal Window Open';
     badgeColor = '#D97706';
-    title = `30 Days Remaining: MOT Renewal Window Active (${reg})`;
-    subject = `30-Day Notice: MOT for ${reg} expires on ${expiryDateFormatted} (Book Now)`;
+    title = `MOT Due in ${daysLeft} Days (${reg})`;
+    subject = `[MOT Due in 30 Days] ${reg} expires on ${expiryDateFormatted} - Book Now`;
+    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Your 30-day early renewal window is now open!`;
     tipHtml = `
       <div class="notice-box">
-        <div class="notice-title">Official Early Renewal Window Open</div>
-        <div>Your vehicle is now eligible for early MOT renewal without losing any days on your existing certificate.</div>
+        <div class="notice-title">Keep Your MOT Date</div>
+        <div>You can get your MOT test done today and still keep your same annual renewal date.</div>
       </div>
     `;
   } else if (daysLeft > 7) {
     // 15 Days Reminder
-    badgeText = '15-Day Urgent Notice';
+    badgeText = '15 Days Remaining';
     badgeColor = '#EA580C';
-    title = `Urgent Notice: MOT Expires in ${daysLeft} Days (${reg})`;
-    subject = `Urgent 15-Day Alert: ${reg} MOT expires on ${expiryDateFormatted}`;
+    title = `Important: MOT Due in ${daysLeft} Days (${reg})`;
+    subject = `[Important] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
+    openingSentence = `Important: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book soon.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #EA580C; background-color: #FFF7ED; color: #9A3412;">
-        <div class="notice-title">Avoid Booking Delays</div>
-        <div>Testing stations often fill slots days in advance. We recommend booking your MOT test now to ensure valid certification.</div>
+        <div class="notice-title">Book Before Slots Fill Up</div>
+        <div>Local garages get busy quickly. Book now to keep your car safe and legal on the road.</div>
       </div>
     `;
   } else if (daysLeft >= 0) {
     // 7 Days / Final Week Reminder
-    badgeText = 'Final Notice - 7 Days Remaining';
+    badgeText = 'Final Reminder - Urgent';
     badgeColor = '#DC2626';
-    title = `Final Notice: MOT Expires in ${daysLeft} Days (${reg})`;
-    subject = `Final Notice: ${reg} MOT expires on ${expiryDateFormatted} (${daysLeft} days left)`;
+    title = `Final Reminder: MOT Expires in ${daysLeft} Days (${reg})`;
+    subject = `[FINAL REMINDER] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
+    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book today.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #DC2626; background-color: #FEF2F2; color: #991B1B;">
-        <div class="notice-title">Immediate Action Required</div>
-        <div>Driving on UK roads without a valid MOT certificate is unlawful and may invalidate your motor insurance.</div>
+        <div class="notice-title">Action Needed Today</div>
+        <div>It is illegal to drive in the UK without a valid MOT, and it can cancel your car insurance.</div>
       </div>
     `;
   } else {
     // Expired
-    badgeText = 'Certificate Expired';
+    badgeText = 'MOT Expired';
     badgeColor = '#991B1B';
-    title = `Expired: MOT Certificate Lapsed for ${reg}`;
-    subject = `Urgent Notice: MOT for ${reg} has EXPIRED (${expiryDateFormatted})`;
+    title = `MOT Expired: ${reg}`;
+    subject = `[EXPIRED] MOT for ${reg} has expired (${expiryDateFormatted})`;
+    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expired on <strong>${expiryDateFormatted}</strong>. Please book a test immediately.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #991B1B; background-color: #FEF2F2; color: #991B1B;">
-        <div class="notice-title">Uncertified Vehicle Warning</div>
-        <div>It is illegal to drive an uncertified vehicle on public roads except when driving directly to a pre-booked MOT test appointment.</div>
+        <div class="notice-title">Do Not Drive on the Road</div>
+        <div>It is illegal to drive this car on public roads unless you are driving directly to a pre-booked MOT test.</div>
       </div>
     `;
   }
@@ -945,22 +984,21 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeText,
     badgeColor,
     contentHtml: `
-      <p class="text">Dear ${customerName},</p>
-      <p class="text">This is an automated MOT status notification for your registered vehicle <strong>${vehicleDesc}</strong> (<span class="plate-badge">${reg}</span>).</p>
+      <p class="text">${openingSentence}</p>
       <div class="card-box" style="border: 2px solid ${badgeColor};">
-        <div class="info-row"><span class="info-label">Registration Mark:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
-        <div class="info-row"><span class="info-label">Vehicle Make & Model:</span><span class="info-val">${vehicleDesc}</span></div>
+        <div class="info-row"><span class="info-label">Number Plate:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
+        <div class="info-row"><span class="info-label">Car Model:</span><span class="info-val">${vehicleDesc}</span></div>
         <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: ${badgeColor}; font-size: 14px; font-weight: 800;">${expiryDateFormatted}</span></div>
-        <div class="info-row"><span class="info-label">Time Remaining:</span><span class="info-val" style="color: ${badgeColor}; font-weight: 800;">${daysLeft >= 0 ? `${daysLeft} Days Left` : `Expired (${Math.abs(daysLeft)} days ago)`}</span></div>
+        <div class="info-row"><span class="info-label">Time Left:</span><span class="info-val" style="color: ${badgeColor}; font-weight: 800;">${daysLeft >= 0 ? `${daysLeft} Days Left` : `Expired (${Math.abs(daysLeft)} days ago)`}</span></div>
       </div>
       ${tipHtml}
     `,
-    ctaText: daysLeft < 0 ? 'Book Urgent MOT Test' : 'Book MOT Test Slot',
+    ctaText: daysLeft < 0 ? 'Book Urgent MOT Test' : 'Book MOT Test Now',
     ctaUrl: serviceLink || 'https://multiplemot.co.uk/garages',
     secondaryActions: [
-      { label: 'Book MOT in Portal', url: serviceLink || 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Approved Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Check Vehicle History', url: 'https://multiplemot.co.uk' },
+      { label: 'Book MOT Test', url: serviceLink || 'https://multiplemot.co.uk/portal' },
+      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
+      { label: 'My Cars', url: 'https://multiplemot.co.uk/portal' },
     ]
   });
 
@@ -968,7 +1006,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     to: customer.email,
     subject,
     html,
-    text: `Dear ${customerName}, your vehicle ${reg} (${vehicleDesc}) MOT expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your test slot: ${serviceLink || 'https://multiplemot.co.uk'}`
+    text: `Reminder: Your MOT for ${reg} (${vehicleDesc}) expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your test: ${serviceLink || 'https://multiplemot.co.uk'}`
   });
 }
 
@@ -985,6 +1023,8 @@ module.exports = {
   sendBookingRequestEmailGarage,
   sendBookingRescheduledEmailCustomer,
   sendBookingRescheduledEmailGarage,
+  sendBookingCancelledEmailCustomer,
+  sendBookingCancelledEmailGarage,
   sendBookingConfirmedEmail,
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
