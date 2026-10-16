@@ -25,16 +25,14 @@ const DEFAULT_GARAGE_IMAGES = [
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  const images = (obj.images && obj.images.length >= 5) 
+  const images = (obj.images && obj.images.length > 0) 
     ? obj.images 
-    : (obj.images && obj.images.length > 0) 
-      ? [...obj.images, ...DEFAULT_GARAGE_IMAGES.slice(obj.images.length, 5)]
-      : DEFAULT_GARAGE_IMAGES;
+    : DEFAULT_GARAGE_IMAGES.slice(0, 3);
   return { 
     ...obj, 
     id: (obj._id || obj.id || '').toString(),
     images,
-    logoUrl: obj.logoUrl || images[0]
+    logoUrl: obj.logoUrl || images[0] || ''
   };
 };
 
@@ -81,10 +79,10 @@ async function registerGarage(req, res) {
       return res.status(400).json({ error: 'A user account with this garage email already exists.' });
     }
 
-    // Ensure at least 5 images are present or fallback to defaults
+    // Ensure at least 3 images are present
     let garageImages = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
-    if (garageImages.length < 5) {
-      garageImages = [...garageImages, ...DEFAULT_GARAGE_IMAGES.slice(garageImages.length, 5)];
+    if (garageImages.length < 3) {
+      return res.status(400).json({ error: 'At least 3 garage photos are required.' });
     }
 
     // Format verification docs
