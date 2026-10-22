@@ -79,7 +79,11 @@ async function getDashboardStats(req, res) {
           { activity: { $regex: 'Requested', $options: 'i' } },
           { activity: { $regex: 'Changed', $options: 'i' } },
           { activity: { $regex: 'Booked', $options: 'i' } },
-          { activity: { $regex: 'Rescheduled', $options: 'i' } }
+          { activity: { $regex: 'Rescheduled', $options: 'i' } },
+          { activity: { $regex: 'Registered', $options: 'i' } },
+          { activity: { $regex: 'Setup', $options: 'i' } },
+          { activity: { $regex: 'Service', $options: 'i' } },
+          { activity: { $regex: 'Approved', $options: 'i' } }
         ]
       });
       

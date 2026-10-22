@@ -62,6 +62,7 @@ async function getAllAlerts(req, res) {
         return res.json([]);
       }
       query.garageId = req.user.garageId;
+      query.type = { $ne: 'GARAGE_REGISTRATION' }; // Garage owners should never see platform garage registration approval alerts
     } else if (role === 'customer') {
       if (!req.user?.customerId) {
         return res.json([]);
@@ -100,12 +101,15 @@ async function createAlert(req, res) {
       type,
       customerName,
       customerId,
+      customerEmail,
+      customerMobile,
       registrationNumber,
       makeModel,
       status,
       date,
       garageId,
       serviceName,
+      services,
       price,
       duration,
       slotTime,
@@ -115,12 +119,48 @@ async function createAlert(req, res) {
     const targetGarageId = garageId || req.user?.garageId;
 
     if (type === 'BOOKED' && !targetGarageId) {
-      return res.status(400).json({ error: 'A garage must be selected for MOT bookings.' });
+      return res.status(400).json({ error: 'A garage must be selected for bookings.' });
     }
+
+    // Determine multiple services and whether MOT is included
+    const reqServices = Array.isArray(services) && services.length > 0 
+      ? services 
+      : (req.body.selectedServices && Array.isArray(req.body.selectedServices) ? req.body.selectedServices : []);
+
+    let isBookingHasMot = false;
+    if (reqServices.length > 0) {
+      isBookingHasMot = reqServices.some(s => {
+        const cat = (s.category || '').toUpperCase();
+        const n = (s.name || '').toUpperCase();
+        return cat === 'MOT' || n.includes('MOT');
+      });
+    } else {
+      const cat = (req.body.serviceCategory || '').toUpperCase();
+      const n = (serviceName || '').toUpperCase();
+      isBookingHasMot = cat === 'MOT' || n.includes('MOT');
+    }
+    const isBookingDateOnly = !isBookingHasMot;
+
+    let finalServiceName = serviceName;
+    if (reqServices.length > 0) {
+      finalServiceName = reqServices.map(s => s.name).join(', ');
+    } else if (!finalServiceName) {
+      finalServiceName = isBookingHasMot ? 'MOT Test' : 'Vehicle Service';
+    }
+
+    let finalPrice = price !== undefined 
+      ? Number(price) 
+      : (reqServices.length > 0 ? reqServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0) : 45.00);
+
+    let finalDuration = duration !== undefined 
+      ? Number(duration) 
+      : (reqServices.length > 0 ? reqServices.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) : 45);
+
+    let finalCategory = req.body.serviceCategory || (isBookingHasMot ? 'MOT' : (reqServices[0]?.category || 'Servicing'));
 
     let assignedStationId = stationId;
     let assignedStationName = stationName;
-    let normalizedSlotTime = slotTime || '';
+    let normalizedSlotTime = '';
 
     // Normalize date (convert DD-MM-YYYY to YYYY-MM-DD if needed)
     let isoDateStr = '';
@@ -139,84 +179,116 @@ async function createAlert(req, res) {
     const bookingDate = isoDateStr ? new Date(isoDateStr) : new Date();
 
     if (type === 'BOOKED') {
-      // Extract time token from slotTime or makeModel
-      let timeToken = '';
-      if (slotTime) {
-        timeToken = slotTime.split(' - ')[0].trim();
-      } else if (makeModel && makeModel.includes('Slot:')) {
-        const match = makeModel.match(/(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
-        if (match) timeToken = match[1].trim();
-      }
-      normalizedSlotTime = timeToken;
-
       const garage = await Garage.findById(targetGarageId);
-      if (garage && date && timeToken) {
+      if (garage && garage.status !== 'Approved') {
+        return res.status(400).json({ error: 'This garage is currently under review and cannot accept bookings yet.' });
+      }
+
+      // Check if the entire date is closed/blocked by the garage for workshop intake
+      if (garage && isoDateStr) {
         const [y, m, d] = isoDateStr.split('-');
         const ddmmDate = `${d}-${m}-${y}`;
-
-        // Check if slot is blocked
-        const isBlocked = (garage.blockedSlots || []).some(
-          s => (s.date === isoDateStr || s.date === ddmmDate || s.date === date) && s.slot === timeToken
+        const isDateBlocked = (garage.blockedSlots || []).some(
+          s => (s.date === isoDateStr || s.date === ddmmDate || s.date === date) &&
+               (s.slot === 'FULL_DAY' || s.slot === 'ALL_SERVICES' || (reqServices.some(sv => s.slot === `SERVICE_DATE_${sv.name}`)) || s.slot === `SERVICE_DATE_${serviceName}`)
         );
-        if (isBlocked) {
-          return res.status(400).json({ error: `Slot ${timeToken} is blocked by the garage on ${ddmmDate}.` });
+        if (isDateBlocked) {
+          return res.status(400).json({ error: `The date ${ddmmDate} is blocked / closed for workshop intake by the garage.` });
+        }
+      }
+
+      if (isBookingHasMot) {
+        // MOT booking requires time slot selection and station capacity check
+        let timeToken = '';
+        if (slotTime) {
+          timeToken = slotTime.split(' - ')[0].trim();
+        } else if (makeModel && makeModel.includes('Slot:')) {
+          const match = makeModel.match(/(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
+          if (match) timeToken = match[1].trim();
+        }
+        normalizedSlotTime = timeToken;
+
+        if (!normalizedSlotTime) {
+          return res.status(400).json({ error: 'A time slot must be selected for MOT tests.' });
         }
 
-        // Approved active stations
-        const approvedStations = (garage.stations || []).filter(
-          s => s.status === 'Approved' && s.isActive !== false
-        );
-        const approvedCapacity = Math.max(1, approvedStations.length);
+        if (garage && date && timeToken) {
+          const [y, m, d] = isoDateStr.split('-');
+          const ddmmDate = `${d}-${m}-${y}`;
 
-        const dayStart = new Date(isoDateStr);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(isoDateStr);
-        dayEnd.setHours(23, 59, 59, 999);
-
-        // Find existing active bookings for this slot on this day
-        const existingBookings = await Alert.find({
-          type: 'BOOKED',
-          garageId: targetGarageId,
-          date: { $gte: dayStart, $lte: dayEnd },
-          status: { $in: ['Pending', 'Approved'] }
-        });
-
-        const slotBookings = existingBookings.filter(b => {
-          if (registrationNumber && b.registrationNumber === registrationNumber.toUpperCase().trim()) {
-            return false; // exclude current vehicle if rebooking/rescheduling
+          // Check if slot is blocked
+          const isBlocked = (garage.blockedSlots || []).some(
+            s => (s.date === isoDateStr || s.date === ddmmDate || s.date === date) && s.slot === timeToken
+          );
+          if (isBlocked) {
+            return res.status(400).json({ error: `Slot ${timeToken} is blocked by the garage on ${ddmmDate}.` });
           }
-          if (b.slotTime) {
-            const bStart = b.slotTime.split(' - ')[0].trim();
-            return bStart === timeToken;
-          }
-          if (b.makeModel) {
-            const slotMatch = b.makeModel.match(/Slot:\s*(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i) ||
-                              b.makeModel.match(/at\s+(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
-            if (slotMatch) {
-              return slotMatch[1].trim() === timeToken;
-            }
-          }
-          return false;
-        });
 
-        if (slotBookings.length >= approvedCapacity) {
-          return res.status(400).json({
-            error: `Slot ${timeToken} is fully booked across all ${approvedCapacity} station(s). Please choose another slot.`
+          // Approved active stations
+          const approvedStations = (garage.stations || []).filter(
+            s => s.status === 'Approved' && s.isActive !== false
+          );
+          const approvedCapacity = Math.max(1, approvedStations.length);
+
+          const dayStart = new Date(isoDateStr);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(isoDateStr);
+          dayEnd.setHours(23, 59, 59, 999);
+
+          // Find existing active bookings for this slot on this day
+          const existingBookings = await Alert.find({
+            type: 'BOOKED',
+            garageId: targetGarageId,
+            date: { $gte: dayStart, $lte: dayEnd },
+            status: { $in: ['Pending', 'Approved'] }
           });
-        }
 
-        // Auto-assign bay to the next free station
-        if (approvedStations.length > 0 && !assignedStationName) {
-          const occupiedStationIds = new Set(slotBookings.map(b => b.stationId?.toString()).filter(Boolean));
-          const freeStation = approvedStations.find(st => !occupiedStationIds.has(st._id?.toString() || st.id));
-          const selectedSt = freeStation || approvedStations[slotBookings.length % approvedStations.length];
-          assignedStationId = selectedSt._id || selectedSt.id;
-          assignedStationName = selectedSt.name;
+          const slotBookings = existingBookings.filter(b => {
+            if (registrationNumber && b.registrationNumber === registrationNumber.toUpperCase().trim()) {
+              return false; // exclude current vehicle if rebooking/rescheduling
+            }
+            // Date-only bookings don't consume MOT bay capacity
+            if (b.hasMot === false && !b.slotTime) return false;
+
+            if (b.slotTime) {
+              const bStart = b.slotTime.split(' - ')[0].trim();
+              return bStart === timeToken;
+            }
+            if (b.makeModel) {
+              const slotMatch = b.makeModel.match(/Slot:\s*(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i) ||
+                                b.makeModel.match(/at\s+(\d{1,2}:\d{2}(?:\s*[AP]M)?)/i);
+              if (slotMatch) {
+                return slotMatch[1].trim() === timeToken;
+              }
+            }
+            return false;
+          });
+
+          if (slotBookings.length >= approvedCapacity) {
+            return res.status(400).json({
+              error: `Slot ${timeToken} is fully booked across all ${approvedCapacity} station(s). Please choose another slot.`
+            });
+          }
+
+          // Auto-assign bay to the next free station
+          if (approvedStations.length > 0 && !assignedStationName) {
+            const occupiedStationIds = new Set(slotBookings.map(b => b.stationId?.toString()).filter(Boolean));
+            const freeStation = approvedStations.find(st => !occupiedStationIds.has(st._id?.toString() || st.id));
+            const selectedSt = freeStation || approvedStations[slotBookings.length % approvedStations.length];
+            assignedStationId = selectedSt._id || selectedSt.id;
+            assignedStationName = selectedSt.name;
+          }
         }
+      } else {
+        // Date-only booking (non-MOT service: Servicing, Repairs, Brakes, Diagnostics, etc.)
+        // No time slots exist for non-MOT services!
+        normalizedSlotTime = slotTime || '';
+        assignedStationId = undefined;
+        assignedStationName = undefined;
       }
 
       let computedSlotNumber = req.body.slotNumber;
-      if (!computedSlotNumber && normalizedSlotTime) {
+      if (!computedSlotNumber && normalizedSlotTime && isBookingHasMot) {
         const standardSlots = [
           '08:30', '09:15', '10:00', '10:45',
           '11:30', '12:15', '13:00', '13:45',
@@ -238,25 +310,28 @@ async function createAlert(req, res) {
         existingAlert.customerId = customerId;
         existingAlert.customerName = customerName;
         existingAlert.makeModel = makeModel;
-        existingAlert.serviceName = serviceName || existingAlert.serviceName;
-        existingAlert.serviceCategory = req.body.serviceCategory || existingAlert.serviceCategory || 'Servicing';
-        existingAlert.price = price !== undefined ? price : existingAlert.price;
-        existingAlert.duration = duration !== undefined ? duration : existingAlert.duration;
+        existingAlert.serviceName = finalServiceName;
+        existingAlert.services = reqServices.length > 0 ? reqServices : existingAlert.services;
+        existingAlert.hasMot = isBookingHasMot;
+        existingAlert.isDateOnly = isBookingDateOnly;
+        existingAlert.serviceCategory = finalCategory;
+        existingAlert.price = finalPrice;
+        existingAlert.duration = finalDuration;
         existingAlert.status = status || 'Pending';
-        existingAlert.slotTime = normalizedSlotTime || existingAlert.slotTime;
+        existingAlert.slotTime = normalizedSlotTime || '';
         if (computedSlotNumber) existingAlert.slotNumber = computedSlotNumber;
         if (assignedStationId) existingAlert.stationId = assignedStationId;
         if (assignedStationName) existingAlert.stationName = assignedStationName;
         existingAlert.date = bookingDate;
         await existingAlert.save();
 
-        let detailsStr = `${customerName} rescheduled MOT booking slot for ${makeModel} (${registrationNumber}) via portal.`;
+        let detailsStr = `${customerName} rescheduled booking for ${makeModel} (${registrationNumber}) via portal.`;
         if (status === 'Approved') {
-          detailsStr = `Garage staff rescheduled MOT booking slot for ${customerName}'s ${makeModel} (${registrationNumber}).`;
+          detailsStr = `Garage staff rescheduled booking for ${customerName}'s ${makeModel} (${registrationNumber}).`;
         }
 
         await Audit.create({
-          activity: 'MOT Booking Rescheduled',
+          activity: isBookingHasMot ? 'MOT Booking Rescheduled' : 'Service Booking Rescheduled',
           details: detailsStr
         });
 
@@ -271,15 +346,32 @@ async function createAlert(req, res) {
         // Dispatch Reschedule Notification Emails to Customer and Garage
         (async () => {
           try {
-            const cust = customerId ? await Customer.findById(customerId) : null;
+            let cust = null;
+            if (customerId) {
+              try { cust = await Customer.findById(customerId); } catch (e) {}
+            }
+            if (!cust && (customerEmail || req.body.customerEmail)) {
+              const emailToFind = (customerEmail || req.body.customerEmail).trim().toLowerCase();
+              cust = await Customer.findOne({ email: emailToFind });
+            }
+            if (!cust && (customerEmail || req.body.customerEmail)) {
+              cust = {
+                email: (customerEmail || req.body.customerEmail).trim().toLowerCase(),
+                firstName: customerName?.split(' ')[0] || customerName || 'Customer',
+                lastName: customerName?.split(' ').slice(1).join(' ') || '',
+                mobile: customerMobile || req.body.customerMobile || ''
+              };
+            }
             const gar = existingAlert.garageId;
-            if (cust && gar) {
+            if (cust && cust.email && gar) {
               sendBookingRescheduledEmailCustomer(existingAlert, cust, gar, status === 'Approved').catch(err =>
                 console.error('[alertController] Failed to send customer reschedule email:', err.message)
               );
-              sendBookingRescheduledEmailGarage(existingAlert, cust, gar).catch(err =>
-                console.error('[alertController] Failed to send garage reschedule email:', err.message)
-              );
+              if (status !== 'Approved') {
+                sendBookingRescheduledEmailGarage(existingAlert, cust, gar).catch(err =>
+                  console.error('[alertController] Failed to send garage reschedule email:', err.message)
+                );
+              }
             }
           } catch (e) {
             console.error('[alertController] Error dispatching reschedule emails:', e.message);
@@ -291,7 +383,7 @@ async function createAlert(req, res) {
     }
 
     let computedSlotNumber = req.body.slotNumber;
-    if (!computedSlotNumber && normalizedSlotTime) {
+    if (!computedSlotNumber && normalizedSlotTime && isBookingHasMot) {
       const standardSlots = [
         '08:30', '09:15', '10:00', '10:45',
         '11:30', '12:15', '13:00', '13:45',
@@ -307,6 +399,8 @@ async function createAlert(req, res) {
       type,
       customerName,
       customerId,
+      customerEmail: customerEmail || req.body.email || undefined,
+      customerMobile: customerMobile || req.body.mobile || undefined,
       garageId: targetGarageId,
       stationId: assignedStationId,
       stationName: assignedStationName,
@@ -314,10 +408,13 @@ async function createAlert(req, res) {
       slotNumber: computedSlotNumber,
       registrationNumber,
       makeModel,
-      serviceName: serviceName || 'MOT Test',
-      serviceCategory: req.body.serviceCategory || (serviceName && serviceName.toLowerCase().includes('mot') ? 'MOT' : 'Servicing'),
-      price: price !== undefined ? price : 45.00,
-      duration: duration || 45,
+      serviceName: finalServiceName,
+      services: reqServices,
+      hasMot: isBookingHasMot,
+      isDateOnly: isBookingDateOnly,
+      serviceCategory: finalCategory,
+      price: finalPrice,
+      duration: finalDuration,
       status: status || 'Pending',
       date: bookingDate
     });
@@ -333,11 +430,11 @@ async function createAlert(req, res) {
     
     if (type === 'BOOKED') {
       if (status === 'Approved') {
-        auditActivity = 'MOT Booked';
-        auditDetails = `Confirmed MOT booking approval for ${makeModel} (${registrationNumber})`;
+        auditActivity = `${serviceName || 'Service'} Booked`;
+        auditDetails = `Confirmed ${serviceName || 'Service'} booking approval for ${makeModel} (${registrationNumber})`;
       } else {
-        auditActivity = 'MOT Booking Requested';
-        auditDetails = `${customerName} requested MOT booking for ${makeModel} (${registrationNumber}) via portal.`;
+        auditActivity = `${serviceName || 'Service'} Booking Requested`;
+        auditDetails = `${customerName} requested ${serviceName || 'Service'} booking for ${makeModel} (${registrationNumber}) via portal.`;
       }
     } else if (type === 'SOLD') {
       auditActivity = 'Vehicle Marked Sold';
@@ -354,19 +451,42 @@ async function createAlert(req, res) {
 
     await newAlert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');
 
-    // Async Email Notifications for MOT Bookings & New Vehicle Registrations
+    // Async Email Notifications for MOT & Service Bookings & New Vehicle Registrations
     if (type === 'BOOKED') {
       (async () => {
         try {
-          const cust = customerId ? await Customer.findById(customerId) : null;
+          let cust = null;
+          if (customerId) {
+            try { cust = await Customer.findById(customerId); } catch (e) {}
+          }
+          if (!cust && (customerEmail || req.body.email)) {
+            const emailToFind = (customerEmail || req.body.email).trim().toLowerCase();
+            cust = await Customer.findOne({ email: emailToFind });
+          }
+          if (!cust && (customerEmail || req.body.email)) {
+            cust = {
+              email: (customerEmail || req.body.email).trim().toLowerCase(),
+              firstName: customerName?.split(' ')[0] || customerName || 'Customer',
+              lastName: customerName?.split(' ').slice(1).join(' ') || '',
+              mobile: customerMobile || req.body.mobile || ''
+            };
+          }
           const gar = newAlert.garageId;
-          if (cust && gar) {
-            sendBookingRequestEmailCustomer(newAlert, cust, gar).catch(err =>
-              console.error('[alertController] Failed to send customer booking request email:', err.message)
-            );
-            sendBookingRequestEmailGarage(newAlert, cust, gar).catch(err =>
-              console.error('[alertController] Failed to send garage booking request email:', err.message)
-            );
+          if (cust && cust.email && gar) {
+            if (status === 'Approved') {
+              // Direct staff booking is already approved -> send confirmation email to customer
+              sendBookingConfirmedEmail(newAlert, cust, gar).catch(err =>
+                console.error('[alertController] Failed to send customer booking confirmed email:', err.message)
+              );
+            } else {
+              // Online customer request pending garage approval
+              sendBookingRequestEmailCustomer(newAlert, cust, gar).catch(err =>
+                console.error('[alertController] Failed to send customer booking request email:', err.message)
+              );
+              sendBookingRequestEmailGarage(newAlert, cust, gar).catch(err =>
+                console.error('[alertController] Failed to send garage booking request email:', err.message)
+              );
+            }
           }
         } catch (e) {
           console.error('[alertController] Error dispatching booking creation emails:', e.message);
@@ -664,48 +784,74 @@ async function rescheduleAlert(req, res) {
     }
 
     if (alert.type !== 'BOOKED') {
-      return res.status(400).json({ error: 'Only MOT Booking requests can be rescheduled.' });
+      return res.status(400).json({ error: 'Only booking requests can be rescheduled.' });
     }
 
     const { date, slot } = req.body;
-    if (!date || !slot) {
-      return res.status(400).json({ error: 'Date and slot are required.' });
+    if (!date) {
+      return res.status(400).json({ error: 'Date is required for rescheduling.' });
     }
 
-    const vehiclePart = alert.makeModel.split(' - Slot: ')[0];
+    const isBookingMot = alert.hasMot !== false && (
+      alert.hasMot === true ||
+      (alert.serviceName && alert.serviceName.toLowerCase().includes('mot')) ||
+      Boolean(alert.slotTime)
+    );
+
+    if (isBookingMot && !slot) {
+      return res.status(400).json({ error: 'Time slot is required for MOT booking reschedule.' });
+    }
+
+    const vehiclePart = alert.makeModel ? alert.makeModel.split(' - Slot: ')[0].split(' - ')[0] : (alert.registrationNumber || 'Vehicle');
     const oldDetails = `Date: ${alert.date}, ${alert.makeModel}`;
 
     // Conflict checking for block slots and bookings
     const dateStr = new Date(date).toISOString().split('T')[0];
     const garage = await Garage.findById(alert.garageId);
     if (garage) {
-      const isBlocked = garage.blockedSlots.some(s => s.date === dateStr && s.slot === slot);
-      if (isBlocked) {
-        return res.status(400).json({ error: 'This time slot is blocked by the garage.' });
+      const isDateBlocked = (garage.blockedSlots || []).some(
+        s => s.date === dateStr && (s.slot === 'FULL_DAY' || s.slot === 'ALL_SERVICES' || s.slot === `SERVICE_DATE_${alert.serviceName}`)
+      );
+      if (isDateBlocked) {
+        return res.status(400).json({ error: 'This date is blocked / closed by the garage.' });
+      }
+
+      if (isBookingMot && slot) {
+        const isBlocked = garage.blockedSlots.some(s => s.date === dateStr && s.slot === slot);
+        if (isBlocked) {
+          return res.status(400).json({ error: 'This time slot is blocked by the garage.' });
+        }
       }
     }
 
-    const alreadyBooked = await Alert.findOne({
-      type: 'BOOKED',
-      garageId: alert.garageId,
-      date: new Date(date),
-      makeModel: `${vehiclePart} - Slot: ${slot}`,
-      status: { $in: ['Pending', 'Approved'] },
-      _id: { $ne: alert._id }
-    });
-    if (alreadyBooked) {
-      return res.status(400).json({ error: 'This time slot has already been booked. Please choose another slot.' });
+    if (isBookingMot && slot) {
+      const alreadyBooked = await Alert.findOne({
+        type: 'BOOKED',
+        garageId: alert.garageId,
+        date: new Date(date),
+        slotTime: slot,
+        status: { $in: ['Pending', 'Approved'] },
+        _id: { $ne: alert._id }
+      });
+      if (alreadyBooked) {
+        return res.status(400).json({ error: 'This time slot has already been booked. Please choose another slot.' });
+      }
+
+      alert.slotTime = slot;
+      alert.makeModel = `${vehiclePart} - Slot: ${slot}`;
+    } else {
+      // Date-only service booking
+      alert.slotTime = '';
+      alert.makeModel = `${vehiclePart} - ${alert.serviceName || 'Service'}`;
     }
   
     alert.date = new Date(date);
-    alert.makeModel = `${vehiclePart} - Slot: ${slot}`;
-    alert.slotTime = slot;
     alert.rescheduled = true;
     await alert.save();
 
     await Audit.create({
-      activity: 'MOT Booking Rescheduled',
-      details: `Rescheduled booking for ${vehiclePart} (${alert.registrationNumber}). Old: ${oldDetails}. New: Date: ${date}, Slot: ${slot}`
+      activity: isBookingMot ? 'MOT Booking Rescheduled' : 'Service Booking Rescheduled',
+      details: `Rescheduled booking for ${vehiclePart} (${alert.registrationNumber}). Old: ${oldDetails}. New: Date: ${date}${isBookingMot && slot ? `, Slot: ${slot}` : ' (Full Day Drop-off)'}`
     });
 
     await alert.populate('garageId', 'name garageName address city postcode phone email latitude longitude location logoUrl rating');

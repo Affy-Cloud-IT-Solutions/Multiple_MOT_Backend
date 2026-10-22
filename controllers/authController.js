@@ -103,53 +103,11 @@ async function adminLogin(req, res) {
         return res.status(403).json({ error: 'Associated garage not found. Please register or contact support.' });
       }
 
-      const rejectedDocs = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
-
-      if (garage.status === 'Pending') {
-        return res.status(403).json({ 
-          error: rejectedDocs.length > 0 
-            ? `Action Required: ${rejectedDocs.length} verification document(s) were rejected by Super Admin. Please re-upload updated copies.`
-            : 'Your garage application is currently pending approval by the Platform Super Admin. You will be able to log in once your facility photos and MOT authorization documentation are approved.',
-          status: 'Pending',
-          garageId: garage._id,
-          garageName: garage.name,
-          verificationStatus: garage.verificationStatus,
-          rejectionReason: garage.rejectionReason,
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
-        });
-      }
-
-      if (garage.status === 'Rejected') {
-        const reasonText = garage.rejectionReason ? ` Reason: ${garage.rejectionReason}` : ' Documentation or verification requirements not met.';
-        return res.status(403).json({ 
-          error: `Your garage application was rejected by the Platform Super Admin.${reasonText}`,
-          status: 'Rejected',
-          garageId: garage._id,
-          garageName: garage.name,
-          verificationStatus: garage.verificationStatus,
-          rejectionReason: garage.rejectionReason || 'Documentation or verification requirements not met.',
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
-        });
-      }
-
       if (garage.status === 'Blacklisted') {
         return res.status(403).json({ 
           error: 'This garage account is currently suspended. Please contact platform support.',
           status: 'Blacklisted',
           garageName: garage.name
-        });
-      }
-
-      if (garage.status !== 'Approved') {
-        return res.status(403).json({ 
-          error: `Garage status is currently "${garage.status}". Super Admin approval is required before you can log in.`,
-          status: garage.status,
-          garageId: garage._id,
-          garageName: garage.name,
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
         });
       }
     }
@@ -177,7 +135,15 @@ async function adminLogin(req, res) {
         role: user.role,
         customerId: user.customerId,
         garageId: user.garageId
-      }
+      },
+      garage: typeof garage !== 'undefined' && garage ? {
+        id: garage._id,
+        name: garage.name,
+        status: garage.status,
+        verificationStatus: garage.verificationStatus,
+        verificationDocuments: garage.verificationDocuments,
+        rejectionReason: garage.rejectionReason
+      } : null
     });
   } catch (error) {
     console.error('Admin login error:', error);

@@ -16,6 +16,7 @@ router.get('/', authMiddleware.optional, garageController.getGarages);
 router.get('/:id', authMiddleware.optional, garageController.getGarageById);
 router.put('/:id', authMiddleware, garageController.updateGarage);
 router.post('/:id/upload-documents', authMiddleware, garageController.uploadGarageDocs);
+router.post('/:id/submit-for-review', authMiddleware, garageController.submitGarageForReview);
 router.put('/:id/status', authMiddleware, garageController.updateGarageStatus);
 router.put('/:id/documents/:docId/status', authMiddleware, garageController.updateGarageDocumentStatus);
 router.get('/:id/slots', authMiddleware.optional, garageController.getGarageSlots);

@@ -69,8 +69,8 @@ async function registerGarage(req, res) {
     const finalPhone = (phone || req.body.ownerMobile || req.body.ownerPhone || '').trim();
     const finalPassword = (ownerPassword || req.body.password || '').trim();
 
-    if (!finalGarageName || !address || !ownerName || !finalEmail || !finalPassword) {
-      return res.status(400).json({ error: 'Garage details, contact email, and owner account password are required.' });
+    if (!finalGarageName || !ownerName || !finalEmail || !finalPassword) {
+      return res.status(400).json({ error: 'Garage name, owner name, contact email, and account password are required.' });
     }
 
     // Check if user email already exists
@@ -79,29 +79,24 @@ async function registerGarage(req, res) {
       return res.status(400).json({ error: 'A user account with this garage email already exists.' });
     }
 
-    // Ensure at least 3 images are present
+    // Garage images are optional at initial registration
     let garageImages = Array.isArray(images) ? images.filter(Boolean) : (images ? [images] : []);
-    if (garageImages.length < 3) {
-      return res.status(400).json({ error: 'At least 3 garage photos are required.' });
-    }
 
-    // Format verification docs
+    // Verification docs are optional at initial registration
     const formattedDocs = Array.isArray(verificationDocuments) 
       ? verificationDocuments.map(d => ({
           name: d.name || 'MOT Bay Authorization',
-          fileUrl: d.fileUrl || '/uploads/mot_cert.pdf',
+          fileUrl: d.fileUrl || '',
           documentType: d.documentType || 'MOT Certificate',
+          status: 'Pending',
           uploadDate: new Date()
         }))
-      : [
-          { name: 'MOT Authorization Certificate', fileUrl: '/uploads/mot_auth.pdf', documentType: 'MOT Certificate', uploadDate: new Date() },
-          { name: 'Public Liability Insurance', fileUrl: '/uploads/liability_insurance.pdf', documentType: 'Public Liability Insurance', uploadDate: new Date() }
-        ];
+      : [];
 
     // Create Garage in Pending status
     const newGarage = await Garage.create({
       name: finalGarageName,
-      address: address.trim(),
+      address: (address || '').trim(),
       city: (city || 'London').trim(),
       postcode: (postcode || '').trim(),
       latitude: Number(latitude) || 51.5074,
@@ -112,7 +107,7 @@ async function registerGarage(req, res) {
       closingTime: closingTime || '18:00',
       workingDays: Array.isArray(workingDays) && workingDays.length > 0 ? workingDays : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
       description: description || '',
-      logoUrl: logoUrl || garageImages[0] || '',
+      logoUrl: logoUrl || (garageImages.length > 0 ? garageImages[0] : ''),
       images: garageImages,
       vtsNumber: (vtsNumber || '').trim(),
       motAuthorisedExaminerNumber: (motAuthorisedExaminerNumber || '').trim(),
@@ -120,10 +115,13 @@ async function registerGarage(req, res) {
       verificationDocuments: formattedDocs,
       legalDeclaration: Boolean(legalDeclaration),
       legalDeclarationDate: legalDeclaration ? new Date() : undefined,
-      status: 'Pending', // Strictly Pending until Super Admin approves
+      status: 'Pending', // Pending until Super Admin approves
       verificationStatus: 'Pending',
       rating: 5.0,
-      distance: parseFloat((Math.random() * 8 + 1).toFixed(1))
+      distance: parseFloat((Math.random() * 8 + 1).toFixed(1)),
+      services: [],
+      stations: [],
+      slots: []
     });
 
     // Generate unique username if needed
@@ -145,9 +143,16 @@ async function registerGarage(req, res) {
       garageId: newGarage._id
     });
 
+    // Generate JWT Token for immediate login
+    const token = jwt.sign(
+      { userId: newOwner._id, email: newOwner.email, role: newOwner.role, garageId: newGarage._id },
+      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
+      { expiresIn: '30d' }
+    );
+
     await Audit.create({
-      activity: 'Garage Registered (Pending Approval)',
-      details: `Garage owner registered "${newGarage.name}" (VTS: ${newGarage.vtsNumber || 'N/A'}) with owner account "${finalEmail}". Application is pending Platform Super Admin review.`
+      activity: 'Garage Registered (Pending Setup & Approval)',
+      details: `Garage owner registered "${newGarage.name}" with owner account "${finalEmail}". Account is in setup mode.`
     });
 
     // Create Alert notification for Super Admin
@@ -156,7 +161,7 @@ async function registerGarage(req, res) {
       customerName: ownerName,
       garageId: newGarage._id,
       status: 'Pending',
-      makeModel: `${newGarage.name} (VTS: ${newGarage.vtsNumber || 'Pending'}) - Awaiting MOT Approval`
+      makeModel: `${newGarage.name} - Initial Registration Completed`
     });
 
     // Send confirmation email to Garage applicant and alert email to Super Admin
@@ -168,8 +173,9 @@ async function registerGarage(req, res) {
     );
 
     res.status(201).json({
-      message: 'Garage application submitted successfully! Your application, 5 facility photos, and MOT testing authorizations are now pending review by the Platform Super Admin. You will receive access once approved.',
+      message: 'Garage registered successfully! Welcome to your dashboard.',
       status: 'Pending',
+      token,
       user: {
         id: newOwner._id,
         name: newOwner.username,
@@ -230,6 +236,16 @@ async function getGarageById(req, res) {
     if (!garage) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
+
+    const role = req.user?.role;
+    const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
+    const isPlatformAdmin = role === 'admin';
+
+    // Non-approved garages are strictly hidden from customers and unauthenticated users
+    if (garage.status !== 'Approved' && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+      return res.status(404).json({ error: 'Garage not found or is currently not active.' });
+    }
+
     const [staffList, bookingsCount, garageAlerts] = await Promise.all([
       User.find({ garageId: garage._id, role: { $in: ['staff', 'garage_admin'] } }).select('-password'),
       Alert.countDocuments({ garageId: garage._id, type: 'BOOKED' }),
@@ -264,6 +280,8 @@ async function updateGarage(req, res) {
       businessRegistrationNumber,
       phone, 
       email, 
+      openingTime,
+      closingTime,
       description, 
       services, 
       workingDays, 
@@ -285,7 +303,7 @@ async function updateGarage(req, res) {
     }
 
     if (name) garage.name = name;
-    if (address) garage.address = address;
+    if (address !== undefined) garage.address = address;
     if (city !== undefined) garage.city = city;
     if (postcode !== undefined) garage.postcode = postcode;
     if (latitude !== undefined) garage.latitude = Number(latitude);
@@ -295,6 +313,8 @@ async function updateGarage(req, res) {
     if (businessRegistrationNumber !== undefined) garage.businessRegistrationNumber = businessRegistrationNumber;
     if (phone !== undefined) garage.phone = phone;
     if (email) garage.email = email.toLowerCase();
+    if (openingTime !== undefined) garage.openingTime = openingTime;
+    if (closingTime !== undefined) garage.closingTime = closingTime;
     if (description !== undefined) garage.description = description;
     if (services) garage.services = services;
     if (workingDays) garage.workingDays = workingDays;
@@ -302,6 +322,9 @@ async function updateGarage(req, res) {
     if (blockedSlots) garage.blockedSlots = blockedSlots;
     if (logoUrl !== undefined) garage.logoUrl = logoUrl;
     if (images !== undefined) garage.images = Array.isArray(images) ? images : [images];
+    if (req.body.locationConfigured !== undefined) garage.locationConfigured = Boolean(req.body.locationConfigured);
+    if (req.body.servicesConfigured !== undefined) garage.servicesConfigured = Boolean(req.body.servicesConfigured);
+    if (req.body.documentsConfigured !== undefined) garage.documentsConfigured = Boolean(req.body.documentsConfigured);
 
     await garage.save();
 
@@ -322,7 +345,7 @@ async function updateGarage(req, res) {
 // 5. Upload garage verification documents
 async function uploadGarageDocs(req, res) {
   try {
-    const { documentName, fileUrl } = req.body;
+    const { documentName, fileUrl, documentType } = req.body;
     const garageId = req.params.id;
 
     if (!documentName || !fileUrl) {
@@ -341,6 +364,8 @@ async function uploadGarageDocs(req, res) {
     garage.verificationDocuments.push({
       name: documentName,
       fileUrl,
+      documentType: documentType || 'MOT Certificate',
+      status: 'Pending',
       uploadDate: new Date()
     });
     garage.verificationStatus = 'Pending'; // resets verification state upon document change
@@ -353,6 +378,45 @@ async function uploadGarageDocs(req, res) {
 
     res.json({
       message: 'Verification document uploaded successfully.',
+      garage: formatDoc(garage)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// 5b. Submit Garage For Final Super Admin Verification Review
+async function submitGarageForReview(req, res) {
+  try {
+    const garageId = req.params.id;
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(garageId)) {
+      return res.status(403).json({ error: 'Access Denied. You do not have permissions to manage this garage.' });
+    }
+
+    const garage = await Garage.findById(garageId);
+    if (!garage) {
+      return res.status(404).json({ error: 'Garage not found.' });
+    }
+
+    garage.verificationStatus = 'Pending';
+    garage.rejectionReason = '';
+    await garage.save();
+
+    await Alert.create({
+      type: 'GARAGE_REGISTRATION',
+      customerName: req.user?.name || garage.name,
+      garageId: garage._id,
+      status: 'Pending',
+      makeModel: `${garage.name} - Verification Documents & Photos Submitted for Review`
+    });
+
+    await Audit.create({
+      activity: 'Garage Submitted for Review',
+      details: `Garage owner submitted "${garage.name}" for Super Admin Go-Live review.`
+    });
+
+    res.json({
+      message: 'Your garage details, photos, and documents have been submitted for verification! Platform Super Admin will review them.',
       garage: formatDoc(garage)
     });
   } catch (error) {
@@ -736,38 +800,61 @@ async function getGarageSlots(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
+    const role = req.user?.role;
+    const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
+    const isPlatformAdmin = role === 'admin';
+
+    // Slots are never active or bookable by customers until garage is Approved
+    if (garage.status !== 'Approved' && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+      return res.status(403).json({ error: 'Garage slots are not active or visible to customers until verification approval.' });
+    }
+
     // Filter approved active stations
-    let approvedStations = (garage.stations || []).filter(
+    const approvedStations = (garage.stations || []).filter(
       s => s.status === 'Approved' && s.isActive !== false
     );
 
-    // If garage has no stations recorded yet, provide 1 default approved station
-    if (approvedStations.length === 0) {
-      approvedStations = [{
-        id: 'default-station-1',
-        name: 'Station 1 (Main MOT Bay)',
-        type: 'Class 4 MOT Bay',
-        slotDuration: 40,
-        status: 'Approved'
-      }];
+    const standardSlots = Array.isArray(garage.slots) ? garage.slots : [];
+
+    // If garage has no configured slots or no approved stations, return empty slots list
+    if (standardSlots.length === 0 || approvedStations.length === 0) {
+      return res.json({
+        garageId: garage._id.toString(),
+        garageName: garage.name,
+        date: formattedDateDDMMYYYY,
+        isoDate: isoDateStr,
+        workingHours: `${garage.openingTime || '08:00'} - ${garage.closingTime || '18:00'}`,
+        slotDuration: 45,
+        totalApprovedStations: approvedStations.length,
+        totalSlots: 0,
+        totalCapacityToday: 0,
+        totalBookedToday: 0,
+        availableCapacityToday: 0,
+        todayBookingsSummary: [],
+        stations: approvedStations,
+        allStations: garage.stations || [],
+        blockedSlots: garage.blockedSlots || [],
+        services: garage.services || [],
+        slots: []
+      });
     }
 
-    // 45-minute slots over 9-hour workday (08:30 to 17:30)
-    const standardSlots = (garage.slots && garage.slots.length >= 10)
-      ? garage.slots
-      : FORTY_FIVE_MIN_SLOTS;
+    // Get bookings for this date (support all valid non-cancelled/non-rejected bookings across UTC & local time)
+    const utcStart = new Date(`${isoDateStr}T00:00:00.000Z`);
+    const utcEnd = new Date(`${isoDateStr}T23:59:59.999Z`);
+    const localStart = new Date(isoDateStr);
+    localStart.setHours(0, 0, 0, 0);
+    const localEnd = new Date(isoDateStr);
+    localEnd.setHours(23, 59, 59, 999);
 
-    // Get bookings for this date
-    const dayStart = new Date(isoDateStr);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(isoDateStr);
-    dayEnd.setHours(23, 59, 59, 999);
+    const minDate = new Date(Math.min(utcStart.getTime(), localStart.getTime()));
+    const maxDate = new Date(Math.max(utcEnd.getTime(), localEnd.getTime()));
 
     const bookings = await Alert.find({
       type: 'BOOKED',
       garageId: garage._id,
-      date: { $gte: dayStart, $lte: dayEnd },
-      status: { $in: ['Pending', 'Approved'] }
+      date: { $gte: minDate, $lte: maxDate },
+      status: { $nin: ['Cancelled', 'Rejected'] }
     }).populate('customerId');
 
     const totalCapacityPerSlot = approvedStations.length;
@@ -781,8 +868,11 @@ async function getGarageSlots(req, res) {
         b => (b.date === isoDateStr || b.date === formattedDateDDMMYYYY) && b.slot === time
       );
 
-      // Count bookings matching this time slot (strictly by slot start time)
+      // Count bookings matching this time slot (strictly for MOT bookings)
       const matchingBookings = bookings.filter(b => {
+        // Exclude date-only non-MOT bookings
+        if (b.isDateOnly || (b.hasMot === false && !b.slotTime)) return false;
+
         // 1. Primary match: b.slotTime (extract only start time token)
         if (b.slotTime) {
           const bookingStart = b.slotTime.split(' - ')[0].trim();
@@ -812,7 +902,7 @@ async function getGarageSlots(req, res) {
       const enrichedBookings = matchingBookings.map((b, idx) => {
         const assignedStationName = b.stationName || (approvedStations[idx % approvedStations.length]?.name) || `Bay ${idx + 1}`;
         const custObj = b.customerId && typeof b.customerId === 'object' ? b.customerId : null;
-        const isApproved = b.status === 'Approved';
+        const isApproved = b.status === 'Approved' || b.status === 'Completed' || b.status === 'Acknowledged';
         const rawCustName = b.customerName || (custObj ? `${custObj.firstName} ${custObj.lastName}` : 'Customer');
         const isStaffOrAdmin = req.user?.role === 'admin' || req.user?.role === 'garage_admin' || req.user?.role === 'staff';
 
@@ -826,6 +916,9 @@ async function getGarageSlots(req, res) {
           registrationNumber: b.registrationNumber || '',
           makeModel: b.makeModel || '',
           serviceName: b.serviceName || 'MOT Test',
+          services: b.services || [],
+          hasMot: true,
+          isDateOnly: false,
           stationName: assignedStationName,
           status: b.status
         };
@@ -865,21 +958,27 @@ async function getGarageSlots(req, res) {
 
       const assignedStationName = b.stationName || (approvedStations[idx % approvedStations.length]?.name) || `Bay ${(idx % Math.max(1, approvedStations.length)) + 1}`;
       const custObj = b.customerId && typeof b.customerId === 'object' ? b.customerId : null;
-      const isApproved = b.status === 'Approved';
+      const isApproved = b.status === 'Approved' || b.status === 'Completed' || b.status === 'Acknowledged';
       const isStaffOrAdmin = req.user?.role === 'admin' || req.user?.role === 'garage_admin' || req.user?.role === 'staff';
       const rawCustName = b.customerName || (custObj ? `${custObj.firstName} ${custObj.lastName}` : 'Customer');
+      const isMot = b.hasMot !== false && Boolean(matchedSlot || (b.serviceName && b.serviceName.toLowerCase().includes('mot')));
 
       return {
         id: b._id.toString(),
-        slotTime: matchedSlot || (b.date && b.date.getHours() ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'Flexible MOT Slot'),
+        slotTime: matchedSlot || (isMot ? 'MOT Slot' : 'Drop-off (Full Day)'),
         customerName: (isStaffOrAdmin || isApproved) ? rawCustName : (b.customerName || 'Customer'),
         customerMobile: (isStaffOrAdmin || isApproved) ? (custObj?.mobile || '') : (custObj?.mobile || ''),
         customerEmail: (isStaffOrAdmin || isApproved) ? (custObj?.email || '') : (custObj?.email || ''),
         registrationNumber: b.registrationNumber || '',
         makeModel: b.makeModel || '',
-        serviceName: b.serviceName || 'MOT Test',
+        serviceName: b.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service'),
+        services: b.services || [],
+        hasMot: isMot,
+        isDateOnly: !isMot,
         stationName: assignedStationName,
-        status: b.status
+        status: b.status,
+        price: b.price,
+        duration: b.duration
       };
     });
 
@@ -902,6 +1001,8 @@ async function getGarageSlots(req, res) {
       todayBookingsSummary: allBookingsTodaySummary,
       stations: approvedStations.map(formatDoc),
       allStations: (garage.stations || []).map(formatDoc),
+      blockedSlots: garage.blockedSlots || [],
+      services: garage.services || [],
       slots: computedSlots
     });
   } catch (error) {
@@ -1035,14 +1136,6 @@ async function getGarageServices(req, res) {
     }
 
     let services = Array.isArray(garage.services) ? garage.services : [];
-
-    // If garage has zero services configured yet, populate with sensible default templates
-    if (services.length === 0) {
-      const defaultTemplates = STANDARD_SERVICE_TEMPLATES.slice(0, 4);
-      garage.services = defaultTemplates;
-      await garage.save();
-      services = garage.services;
-    }
 
     // Role-based visibility:
     // If request is from the garage owner or platform admin, return ALL services (active and inactive)
@@ -1401,6 +1494,7 @@ module.exports = {
   addGarageService,
   updateGarageService,
   deleteGarageService,
-  seedGarageDefaultServices
+  seedGarageDefaultServices,
+  submitGarageForReview
 };
 

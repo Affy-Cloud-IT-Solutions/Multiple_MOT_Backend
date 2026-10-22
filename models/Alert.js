@@ -14,6 +14,15 @@ const AlertSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Customer'
     },
+    customerEmail: {
+        type: String,
+        trim: true,
+        lowercase: true
+    },
+    customerMobile: {
+        type: String,
+        trim: true
+    },
     garageId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Garage'
@@ -32,6 +41,20 @@ const AlertSchema = new mongoose.Schema({
     },
     serviceName: {
         type: String
+    },
+    services: [{
+        name: { type: String, trim: true },
+        category: { type: String, default: 'General', trim: true },
+        price: { type: Number, default: 0 },
+        duration: { type: Number, default: 45 }
+    }],
+    hasMot: {
+        type: Boolean,
+        default: false
+    },
+    isDateOnly: {
+        type: Boolean,
+        default: false
     },
     serviceCategory: {
         type: String,
