@@ -31,6 +31,7 @@ const alertRoutes = require('./routes/alertRoutes');
 const garageRoutes = require('./routes/garageRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
+const serviceCategoryRoutes = require('./routes/serviceCategoryRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -73,6 +74,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/garages', garageRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/service-categories', serviceCategoryRoutes);
 
 // ========================================
 // HEALTH CHECK ENDPOINTS

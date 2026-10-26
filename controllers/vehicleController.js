@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
@@ -63,13 +64,22 @@ async function createVehicle(req, res) {
   try {
     const { customerId, registrationNumber, make, model, year, motExpiryDate, lastServiceDate } = req.body;
 
-    if (!customerId || !registrationNumber || !make || !model || !motExpiryDate) {
-      return res.status(400).json({ error: 'Customer ID, registration plate, make, model, and MOT expiry date are required.' });
+    if (!registrationNumber || !make || !model || !motExpiryDate) {
+      return res.status(400).json({ error: 'Registration plate, make, model, and MOT expiry date are required.' });
     }
 
-    const customer = await Customer.findById(customerId);
+    let customer = null;
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      customer = await Customer.findById(customerId);
+    }
+    if (!customer && req.user?.customerId && mongoose.Types.ObjectId.isValid(req.user.customerId)) {
+      customer = await Customer.findById(req.user.customerId);
+    }
+    if (!customer && req.user?.email) {
+      customer = await Customer.findOne({ email: req.user.email });
+    }
     if (!customer) {
-      return res.status(400).json({ error: 'Customer record does not exist.' });
+      return res.status(400).json({ error: 'Customer record does not exist or customer could not be identified.' });
     }
 
     if (!isValidVRN(registrationNumber)) {
@@ -247,7 +257,7 @@ async function lookupDVLA(req, res) {
     res.json({ source: 'DVSA LIVE API', found: true, vehicle: mappedVehicle });
   } catch (error) {
     console.error('[vehicleController] lookupDVLA error:', error);
-    res.status(500).json({ error: 'Failed to fetch vehicle history from DVSA.' });
+    res.status(503).json({ error: 'Government DVSA API is busy or temporarily unavailable. Please try again.' });
   }
 }
 

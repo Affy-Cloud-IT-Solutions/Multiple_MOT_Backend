@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const Customer = require('../models/Customer');
+const User = require('../models/User');
 const Vehicle = require('../models/Vehicle');
 const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
@@ -13,17 +15,26 @@ const formatDoc = (doc) => {
 async function getAllCustomers(req, res) {
   try {
     const role = req.user?.role;
-    const filterGarageId = req.query.garageId || (role === 'garage_admin' || role === 'staff' ? req.user?.garageId : null);
     let query = {};
-    if (filterGarageId) {
-      const garageAlerts = await Alert.find({ garageId: filterGarageId }).select('customerId');
-      const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
-      query.$or = [
-        { garageId: filterGarageId },
-        { garageIds: filterGarageId },
-        { _id: { $in: alertCustomerIds } }
-      ];
+
+    if (role === 'customer') {
+      if (!req.user?.customerId) {
+        return res.json([]);
+      }
+      query._id = req.user.customerId;
+    } else {
+      const filterGarageId = req.query.garageId || (role === 'garage_admin' || role === 'staff' ? req.user?.garageId : null);
+      if (filterGarageId) {
+        const garageAlerts = await Alert.find({ garageId: filterGarageId }).select('customerId');
+        const alertCustomerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
+        query.$or = [
+          { garageId: filterGarageId },
+          { garageIds: filterGarageId },
+          { _id: { $in: alertCustomerIds } }
+        ];
+      }
     }
+
     const customers = await Customer.find(query).sort({ createdAt: -1 });
     res.json(customers.map(formatDoc));
   } catch (error) {
@@ -33,7 +44,34 @@ async function getAllCustomers(req, res) {
 
 async function getCustomerById(req, res) {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const { id } = req.params;
+    let customer = null;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      customer = await Customer.findById(id);
+    }
+
+    // Fallback: check if authenticated user matches customer email
+    if (!customer && req.user?.email) {
+      customer = await Customer.findOne({ email: req.user.email.toLowerCase().trim() });
+    }
+
+    // If still not found and the caller is a customer, auto-create customer profile
+    if (!customer && req.user?.role === 'customer') {
+      const parts = (req.user.username || 'Customer').trim().split(' ');
+      customer = await Customer.create({
+        firstName: parts[0] || 'Customer',
+        lastName: parts.slice(1).join(' ') || '',
+        email: req.user.email.toLowerCase().trim(),
+        mobile: 'N/A',
+        preferredContact: 'Email'
+      });
+
+      if (req.user.userId) {
+        await User.findByIdAndUpdate(req.user.userId, { customerId: customer._id });
+      }
+    }
+
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found.' });
     }

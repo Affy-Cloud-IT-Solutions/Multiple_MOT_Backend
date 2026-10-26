@@ -126,7 +126,8 @@ const GarageSchema = new mongoose.Schema({
     blockedSlots: [{
         date: { type: String, required: true }, // format "YYYY-MM-DD"
         slot: { type: String, required: true }, // e.g. "09:15"
-        stationId: { type: mongoose.Schema.Types.ObjectId } // optional: specific station
+        stationId: { type: mongoose.Schema.Types.ObjectId }, // optional: specific station
+        count: { type: Number, default: 1 } // number of bays blocked (e.g. 1 of 2, 2 of 2)
     }],
     verificationDocuments: [{
         name: { type: String, required: true },

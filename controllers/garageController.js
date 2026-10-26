@@ -143,12 +143,9 @@ async function registerGarage(req, res) {
       garageId: newGarage._id
     });
 
-    // Generate JWT Token for immediate login
-    const token = jwt.sign(
-      { userId: newOwner._id, email: newOwner.email, role: newOwner.role, garageId: newGarage._id },
-      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
-      { expiresIn: '30d' }
-    );
+    // Generate Access & Refresh Tokens for immediate login
+    const { generateTokens } = require('./authController');
+    const tokens = await generateTokens(newOwner, null, newGarage._id);
 
     await Audit.create({
       activity: 'Garage Registered (Pending Setup & Approval)',
@@ -175,7 +172,9 @@ async function registerGarage(req, res) {
     res.status(201).json({
       message: 'Garage registered successfully! Welcome to your dashboard.',
       status: 'Pending',
-      token,
+      token: tokens.token,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: {
         id: newOwner._id,
         name: newOwner.username,
@@ -604,7 +603,7 @@ function getSlotEndTime(startTimeStr) {
 // 7. Block a booking slot for a date
 async function blockGarageSlot(req, res) {
   try {
-    const { date, slot } = req.body;
+    const { date, slot, count = 1 } = req.body;
     const garageId = req.params.id;
 
     if (!date || !slot) {
@@ -623,16 +622,27 @@ async function blockGarageSlot(req, res) {
     const isoDate = normalizeToISODate(date);
     const ddmmDate = formatDateToDDMMYYYY(date);
 
+    // Number of bays to block (minimum 1)
+    const numToBlock = Math.max(1, parseInt(count, 10) || 1);
+
     // Check if slot already blocked
-    const alreadyBlocked = garage.blockedSlots.some(
+    const existingIndex = (garage.blockedSlots || []).findIndex(
       s => (s.date === isoDate || s.date === ddmmDate || s.date === date) && s.slot === slot
     );
-    if (!alreadyBlocked) {
-      garage.blockedSlots.push({ date: isoDate, slot });
-      await garage.save();
+
+    if (existingIndex >= 0) {
+      garage.blockedSlots[existingIndex].count = numToBlock;
+      garage.blockedSlots[existingIndex].date = isoDate;
+    } else {
+      garage.blockedSlots.push({ date: isoDate, slot, count: numToBlock });
     }
 
-    res.json({ message: 'Slot blocked successfully.', garage: formatDoc(garage) });
+    await garage.save();
+
+    res.json({
+      message: `Slot ${slot} blocked (${numToBlock} bay${numToBlock > 1 ? 's' : ''}) successfully.`,
+      garage: formatDoc(garage)
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -641,7 +651,7 @@ async function blockGarageSlot(req, res) {
 // 8. Unblock a booking slot for a date
 async function unblockGarageSlot(req, res) {
   try {
-    const { date, slot } = req.body;
+    const { date, slot, count, unblockAll } = req.body;
     const garageId = req.params.id;
 
     if (!date || !slot) {
@@ -660,12 +670,33 @@ async function unblockGarageSlot(req, res) {
     const isoDate = normalizeToISODate(date);
     const ddmmDate = formatDateToDDMMYYYY(date);
 
-    garage.blockedSlots = (garage.blockedSlots || []).filter(
-      s => !((s.date === isoDate || s.date === ddmmDate || s.date === date) && s.slot === slot)
-    );
+    if (unblockAll || !count) {
+      // Remove entirely
+      garage.blockedSlots = (garage.blockedSlots || []).filter(
+        s => !((s.date === isoDate || s.date === ddmmDate || s.date === date) && s.slot === slot)
+      );
+    } else {
+      // Partially unblock by decrementing count
+      const existing = (garage.blockedSlots || []).find(
+        s => (s.date === isoDate || s.date === ddmmDate || s.date === date) && s.slot === slot
+      );
+      if (existing) {
+        const decrement = parseInt(count, 10) || 1;
+        const remaining = (existing.count || 1) - decrement;
+        if (remaining <= 0) {
+          garage.blockedSlots = (garage.blockedSlots || []).filter(
+            s => !((s.date === isoDate || s.date === ddmmDate || s.date === date) && s.slot === slot)
+          );
+        } else {
+          existing.count = remaining;
+          existing.date = isoDate;
+        }
+      }
+    }
+
     await garage.save();
 
-    res.json({ message: 'Slot unblocked successfully.', garage: formatDoc(garage) });
+    res.json({ message: `Slot ${slot} unblocked successfully.`, garage: formatDoc(garage) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -863,10 +894,13 @@ async function getGarageSlots(req, res) {
     const computedSlots = standardSlots.map((time, slotIndex) => {
       const slotMins = timeToMinutes(time);
 
-      // Check if slot is blocked in garage.blockedSlots
-      const isBlocked = (garage.blockedSlots || []).some(
-        b => (b.date === isoDateStr || b.date === formattedDateDDMMYYYY) && b.slot === time
+      // Check if slot has a block entry in garage.blockedSlots
+      const blockEntry = (garage.blockedSlots || []).find(
+        b => (b.date === isoDateStr || b.date === formattedDateDDMMYYYY || b.date === rawDate) && b.slot === time
       );
+      const blockedCount = blockEntry ? Math.min(totalCapacityPerSlot, blockEntry.count !== undefined ? blockEntry.count : 1) : 0;
+      const isBlocked = blockedCount >= totalCapacityPerSlot;
+      const isPartiallyBlocked = blockedCount > 0 && blockedCount < totalCapacityPerSlot;
 
       // Count bookings matching this time slot (strictly for MOT bookings)
       const matchingBookings = bookings.filter(b => {
@@ -890,7 +924,7 @@ async function getGarageSlots(req, res) {
       });
 
       const bookedCount = matchingBookings.length;
-      const availableCount = isBlocked ? 0 : Math.max(0, totalCapacityPerSlot - bookedCount);
+      const availableCount = Math.max(0, totalCapacityPerSlot - bookedCount - blockedCount);
 
       let slotStatus = 'Available';
       if (isBlocked) {
@@ -936,8 +970,10 @@ async function getGarageSlots(req, res) {
         slotDuration: 45,
         totalCapacity: totalCapacityPerSlot,
         bookedCount,
+        blockedCount,
         availableCount,
         isBlocked,
+        isPartiallyBlocked,
         status: slotStatus,
         bookings: enrichedBookings
       };
@@ -997,7 +1033,7 @@ async function getGarageSlots(req, res) {
       totalSlots,
       totalCapacityToday,
       totalBookedToday,
-      availableCapacityToday: Math.max(0, totalCapacityToday - totalBookedToday),
+      availableCapacityToday: computedSlots.reduce((sum, s) => sum + (s.availableCount || 0), 0),
       todayBookingsSummary: allBookingsTodaySummary,
       stations: approvedStations.map(formatDoc),
       allStations: (garage.stations || []).map(formatDoc),
