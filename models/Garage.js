@@ -16,7 +16,7 @@ const GarageSchema = new mongoose.Schema({
     },
     address: {
         type: String,
-        required: [true, 'Garage address is required'],
+        default: '',
         trim: true
     },
     city: {
@@ -58,6 +58,18 @@ const GarageSchema = new mongoose.Schema({
     },
     legalDeclarationDate: {
         type: Date
+    },
+    locationConfigured: {
+        type: Boolean,
+        default: false
+    },
+    servicesConfigured: {
+        type: Boolean,
+        default: false
+    },
+    documentsConfigured: {
+        type: Boolean,
+        default: false
     },
     email: {
         type: String,
@@ -109,12 +121,13 @@ const GarageSchema = new mongoose.Schema({
     }],
     slots: {
         type: [String],
-        default: ['08:30', '09:15', '10:00', '10:45', '11:30', '12:15', '13:00', '13:45', '14:30', '15:15', '16:00', '16:45']
+        default: []
     },
     blockedSlots: [{
         date: { type: String, required: true }, // format "YYYY-MM-DD"
         slot: { type: String, required: true }, // e.g. "09:15"
-        stationId: { type: mongoose.Schema.Types.ObjectId } // optional: specific station
+        stationId: { type: mongoose.Schema.Types.ObjectId }, // optional: specific station
+        count: { type: Number, default: 1 } // number of bays blocked (e.g. 1 of 2, 2 of 2)
     }],
     verificationDocuments: [{
         name: { type: String, required: true },

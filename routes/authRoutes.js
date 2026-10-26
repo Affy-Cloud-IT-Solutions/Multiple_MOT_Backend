@@ -8,6 +8,8 @@ const { verifySmtpConnection, sendDiagnosticTestEmail } = require('../services/e
 router.post('/login', authController.customerLogin);
 router.post('/admin/login', authController.adminLogin);
 router.post('/signup', authController.signup);
+router.post('/refresh-token', authController.refreshToken);
+router.post('/logout', authMiddleware.optional, authController.logout);
 router.post('/create-staff', authMiddleware, authController.createStaff);
 router.get('/staff', authMiddleware, authController.getStaffList);
 router.delete('/staff/:id', authMiddleware, authController.deleteStaff);

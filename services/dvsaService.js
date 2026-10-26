@@ -33,7 +33,8 @@ async function getAccessToken(forceRefresh = false) {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
     },
-    body: params.toString()
+    body: params.toString(),
+    signal: AbortSignal.timeout(12000)
   });
 
   if (!response.ok) {
@@ -68,7 +69,8 @@ async function getVehicleMotHistory(registration) {
         'Authorization': `Bearer ${token}`,
         'x-api-key': API_KEY,
         'Accept': 'application/json'
-      }
+      },
+      signal: AbortSignal.timeout(12000)
     });
 
     // If unauthorized, token might have expired or been revoked; try refreshing once
@@ -81,7 +83,8 @@ async function getVehicleMotHistory(registration) {
           'Authorization': `Bearer ${token}`,
           'x-api-key': API_KEY,
           'Accept': 'application/json'
-        }
+        },
+        signal: AbortSignal.timeout(12000)
       });
     }
 

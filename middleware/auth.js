@@ -19,7 +19,12 @@ function authMiddleware(req, res, next) {
     req.user = verified;
     next();
   } catch (error) {
-    res.status(400).json({ error: 'Invalid authentication token.' });
+    const isExpired = error.name === 'TokenExpiredError';
+    res.status(401).json({ 
+      error: isExpired ? 'Access token expired.' : 'Invalid authentication token.',
+      code: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      tokenExpired: isExpired
+    });
   }
 }
 

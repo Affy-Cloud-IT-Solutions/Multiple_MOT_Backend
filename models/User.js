@@ -39,6 +39,10 @@ const UserSchema = new mongoose.Schema({
     },
     garageConsentDate: {
         type: Date
+    },
+    refreshToken: {
+        type: String,
+        default: null
     }
 }, {
     timestamps: true

@@ -503,21 +503,23 @@ async function sendBookingRequestEmailCustomer(booking, customer, garage) {
   const makeModel = booking.makeModel || '';
   const garageName = garage?.name || 'Selected Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || 'Selected Slot';
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Request Sent',
+    title: `${isMot ? 'MOT' : 'Service'} Booking Request Sent`,
     badgeText: 'Waiting for Garage',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">We received your MOT booking request for car <strong>${reg}</strong> at <strong>${garageName}</strong>.</p>
-      <p class="text">The garage will review your request and confirm your time slot soon. We will email you as soon as they confirm.</p>
+      <p class="text">We received your booking request for car <strong>${reg}</strong> at <strong>${garageName}</strong>.</p>
+      <p class="text">${isMot ? 'The garage will review your request and confirm your MOT time slot soon.' : 'The garage will review your request and confirm your appointment date. Please bring your car on the scheduled date during workshop hours.'} We will email you as soon as they confirm.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${makeModel}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">Date:</span><span class="info-val">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Time:</span><span class="info-val">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${booking.serviceName || 'MOT Test'} (£${booking.price || 45})</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'Time Slot:' : 'Appointment Type:'}</span><span class="info-val">${slotTimeDisplay}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName} (£${booking.price || 45})</span></div>
       </div>
     `,
     ctaText: 'View My Bookings',
@@ -530,9 +532,9 @@ async function sendBookingRequestEmailCustomer(booking, customer, garage) {
 
   return sendEmail({
     to: customer.email,
-    subject: `[Booking Request] MOT for ${reg} at ${garageName}`,
+    subject: `[Booking Request] ${serviceName} for ${reg} at ${garageName}`,
     html,
-    text: `Your MOT booking request for ${reg} on ${bookingDate} at ${garageName} has been sent.`
+    text: `Your ${serviceName} booking request for ${reg} on ${bookingDate} at ${garageName} has been sent.`
   });
 }
 
@@ -540,22 +542,24 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || 'Selected Slot';
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
-    title: 'New MOT Booking Request',
+    title: `New ${isMot ? 'MOT' : 'Service'} Booking Request`,
     badgeText: 'Action Needed',
     badgeColor: '#1677FF',
     contentHtml: `
-      <p class="text">You have a new MOT booking request for car <strong>${reg}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong>.</p>
-      <p class="text">Please log in to your garage dashboard to accept this booking or propose a new time slot.</p>
+      <p class="text">You have a new booking request for car <strong>${reg}</strong> on <strong>${bookingDate}</strong>${isMot ? ` at <strong>${slotTimeDisplay}</strong>` : ' (Full-Day Workshop Intake)'}.</p>
+      <p class="text">Please log in to your garage dashboard to accept or reject this booking request.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
         <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
         <div class="info-row"><span class="info-label">Requested Date:</span><span class="info-val">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Requested Time:</span><span class="info-val">${slotTime}</span></div>
-        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${booking.serviceName || 'MOT Test'} (£${booking.price || 45})</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'Requested Time:' : 'Schedule:'}</span><span class="info-val">${slotTimeDisplay}</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName} (£${booking.price || 45})</span></div>
       </div>
     `,
     ctaText: 'Review & Accept Booking',
@@ -568,9 +572,9 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
 
   return sendEmail({
     to: garage.email,
-    subject: `[New Booking Request] MOT for ${reg} on ${bookingDate} (${slotTime})`,
+    subject: `[New Booking Request] ${serviceName} for ${reg} on ${bookingDate}${isMot ? ` (${slotTimeDisplay})` : ''}`,
     html,
-    text: `New MOT booking request from ${customerName} for ${reg} on ${bookingDate} at ${slotTime}.`
+    text: `New booking request from ${customerName} for ${reg} on ${bookingDate} (${serviceName}).`
   });
 }
 
@@ -578,25 +582,29 @@ async function sendBookingConfirmedEmail(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || 'Your Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || 'Selected Slot';
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (08:00 - 18:00)';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
+  const servicePrice = booking.price !== undefined ? `£${booking.price}` : '';
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Confirmed',
+    title: `${serviceName} Confirmed`,
     badgeText: 'Confirmed',
     badgeColor: '#059669',
     contentHtml: `
-      <p class="text">Great news! Your MOT booking for <strong>${reg}</strong> at <strong>${garageName}</strong> is confirmed.</p>
+      <p class="text">Great news! Your booking for <strong>${serviceName}</strong> on car <strong>${reg}</strong> at <strong>${garageName}</strong> is confirmed.</p>
       <div class="card-box" style="border: 2px solid #059669;">
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val" style="color: #059669; font-weight: 800;">${serviceName} ${servicePrice ? `(${servicePrice})` : ''}</span></div>
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
         <div class="info-row"><span class="info-label">Date:</span><span class="info-val" style="color: #059669; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Time:</span><span class="info-val" style="color: #059669; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'Time:' : 'Drop-off:'}</span><span class="info-val" style="color: #059669; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}, ${garage.city || ''} (${garage.postcode || ''})</span></div>
         <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
       </div>
       <div class="notice-box">
         <div class="notice-title">Helpful Tip</div>
-        <div>Please try to arrive 10 minutes before your time slot. Bring your car log book (V5C) if you have it.</div>
+        <div>${isMot ? 'Please try to arrive 10 minutes before your appointment time.' : 'Please bring your vehicle to the garage on this date during opening hours.'} Bring your vehicle service history or log book (V5C) if available.</div>
       </div>
     `,
     ctaText: 'Get Driving Directions',
@@ -609,9 +617,9 @@ async function sendBookingConfirmedEmail(booking, customer, garage) {
 
   return sendEmail({
     to: customer.email,
-    subject: `[Confirmed] MOT for ${reg} at ${garageName} on ${bookingDate}`,
+    subject: `[Confirmed] ${serviceName} for ${reg} at ${garageName} on ${bookingDate}`,
     html,
-    text: `Your MOT appointment for ${reg} is confirmed at ${garageName} for ${bookingDate} at ${slotTime}.`
+    text: `Your ${serviceName} appointment for ${reg} is confirmed at ${garageName} for ${bookingDate}${isMot ? ` at ${slotTimeDisplay}` : ''}.`
   });
 }
 
@@ -654,22 +662,27 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || 'Selected Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
+  const servicePrice = booking.price !== undefined ? `£${booking.price}` : '';
 
   const html = createHtmlEmailLayout({
-    title: isApproved ? 'MOT Booking Rescheduled' : 'Reschedule Request Sent',
-    badgeText: isApproved ? 'New Time Confirmed' : 'Waiting for Garage',
+    title: isApproved ? `${serviceName} Rescheduled` : 'Reschedule Request Sent',
+    badgeText: isApproved ? (isMot ? 'New Time Confirmed' : 'New Date Confirmed') : 'Waiting for Garage',
     badgeColor: isApproved ? '#059669' : '#D97706',
     contentHtml: `
       <p class="text">
         ${isApproved 
-          ? `Your MOT appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been changed to a new date and time.` 
-          : `Your request to change your MOT appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been sent to the garage.`}
+          ? `Your ${serviceName} appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been changed to a new ${isMot ? 'date and time' : 'date'}.` 
+          : `Your request to change your ${serviceName} appointment for <strong>${reg}</strong> at <strong>${garageName}</strong> has been sent to the garage.`}
       </p>
       <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#D97706'};">
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${serviceName} ${servicePrice ? `(${servicePrice})` : ''}</span></div>
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
         <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">New Time:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'New Time:' : 'Drop-off:'}</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>
       </div>
@@ -684,9 +697,9 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
 
   return sendEmail({
     to: customer.email,
-    subject: `[Rescheduled] MOT for ${reg} at ${garageName} (${bookingDate})`,
+    subject: `[Rescheduled] ${serviceName} for ${reg} at ${garageName} (${bookingDate})`,
     html,
-    text: `Your MOT appointment for ${reg} has been rescheduled to ${bookingDate} at ${slotTime} with ${garageName}.`
+    text: `Your ${serviceName} appointment for ${reg} has been rescheduled to ${bookingDate}${isMot ? ` at ${slotTimeDisplay}` : ''} with ${garageName}.`
   });
 }
 
@@ -694,20 +707,23 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
-    title: 'MOT Booking Time Changed',
-    badgeText: 'Time Changed',
+    title: `Booking Date ${isMot ? '& Time ' : ''}Changed`,
+    badgeText: isMot ? 'Time Changed' : 'Date Changed',
     badgeColor: '#D97706',
     contentHtml: `
-      <p class="text">The customer <strong>${customerName}</strong> has requested a new date/time for car <strong>${reg}</strong>.</p>
+      <p class="text">The customer <strong>${customerName}</strong> has requested a new ${isMot ? 'date/time' : 'date'} for car <strong>${reg}</strong> (${serviceName}).</p>
       <div class="card-box" style="border-left: 4px solid #D97706;">
         <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
         <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
         <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">New Time Slot:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'New Time Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTimeDisplay}</span></div>
       </div>
     `,
     ctaText: 'Open Garage Schedule',
@@ -720,9 +736,9 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
 
   return sendEmail({
     to: garage.email,
-    subject: `[Time Changed] MOT for ${reg} on ${bookingDate} (${slotTime})`,
+    subject: `[Schedule Changed] ${serviceName} for ${reg} on ${bookingDate}${isMot ? ` (${slotTimeDisplay})` : ''}`,
     html,
-    text: `Customer ${customerName} has changed their MOT for ${reg} to ${bookingDate} at ${slotTime}.`
+    text: `Customer ${customerName} has changed their booking for ${reg} to ${bookingDate}${isMot ? ` at ${slotTimeDisplay}` : ''}.`
   });
 }
 
@@ -730,8 +746,10 @@ async function sendBookingCancelledEmailCustomer(booking, customer, garage, canc
   const reg = booking.registrationNumber || 'Vehicle';
   const garageName = garage?.name || garage?.garageName || booking.stationName || 'Selected Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
-  const serviceName = booking.serviceName || 'MOT Test';
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Workshop Drop-off';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
     title: 'Booking Cancelled',
@@ -739,19 +757,19 @@ async function sendBookingCancelledEmailCustomer(booking, customer, garage, canc
     badgeColor: '#EF4444',
     contentHtml: `
       <p class="text">
-        Your booking for <strong>${serviceName}</strong> (${reg}) at <strong>${garageName}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been cancelled.
+        Your booking for <strong>${serviceName}</strong> (${reg}) at <strong>${garageName}</strong> on <strong>${bookingDate}</strong>${isMot ? ` at <strong>${slotTimeDisplay}</strong>` : ''} has been cancelled.
       </p>
       <div class="card-box" style="border: 2px solid #EF4444;">
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
         <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'Cancelled Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
         ${garage.address ? `<div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>` : ''}
         ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
       </div>
       <p class="text" style="color: #64748B; font-size: 13px; margin-top: 12px;">
-        No further action is required. If you wish to re-book for another date or time, you can do so through the mobile app.
+        No further action is required. If you wish to re-book for another date, you can do so through the mobile app.
       </p>
     `
   });
@@ -760,7 +778,7 @@ async function sendBookingCancelledEmailCustomer(booking, customer, garage, canc
     to: customer.email,
     subject: `[Cancelled] ${serviceName} Booking for ${reg} on ${bookingDate}`,
     html,
-    text: `Your ${serviceName} appointment for ${reg} on ${bookingDate} at ${slotTime} with ${garageName} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`
+    text: `Your ${serviceName} appointment for ${reg} on ${bookingDate}${isMot ? ` at ${slotTimeDisplay}` : ''} with ${garageName} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`
   });
 }
 
@@ -769,16 +787,18 @@ async function sendBookingCancelledEmailGarage(booking, customer, garage, cancel
   const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || booking.customerName || 'Customer';
   const customerPhone = customer?.mobile || customer?.phone || 'N/A';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
-  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : 'Selected Slot');
-  const serviceName = booking.serviceName || 'MOT Test';
+  const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
+  const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Workshop Intake';
+  const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
-    title: 'Booking Cancelled - Slot Freed',
-    badgeText: 'Slot Released',
+    title: `Booking Cancelled${isMot ? ' - Slot Freed' : ''}`,
+    badgeText: isMot ? 'Slot Released' : 'Booking Cancelled',
     badgeColor: '#EF4444',
     contentHtml: `
       <p class="text">
-        The booking for <strong>${reg}</strong> on <strong>${bookingDate}</strong> at <strong>${slotTime}</strong> has been <strong>cancelled</strong> by ${cancelledBy}.
+        The booking for <strong>${reg}</strong> on <strong>${bookingDate}</strong>${isMot ? ` at <strong>${slotTimeDisplay}</strong>` : ''} has been <strong>cancelled</strong> by ${cancelledBy}.
       </p>
       <div class="card-box" style="border-left: 4px solid #EF4444;">
         <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${customerName}</span></div>
@@ -786,12 +806,13 @@ async function sendBookingCancelledEmailGarage(booking, customer, garage, cancel
         <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
         <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
-        <div class="info-row"><span class="info-label">Cancelled Slot:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTime}</span></div>
+        <div class="info-row"><span class="info-label">${isMot ? 'Cancelled Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTimeDisplay}</span></div>
         ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
       </div>
+      ${isMot ? `
       <p class="text" style="color: #059669; font-weight: 600; margin-top: 10px;">
-        ✅ This slot (${slotTime} on ${bookingDate}) has been automatically released and is now open for new bookings.
-      </p>
+        ✅ This MOT slot (${slotTimeDisplay} on ${bookingDate}) has been automatically released and is now open for new bookings.
+      </p>` : ''}
     `
   });
 

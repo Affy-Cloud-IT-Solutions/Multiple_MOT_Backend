@@ -6,9 +6,18 @@ const Alert = require('../models/Alert');
 const Audit = require('../models/Audit');
 const Template = require('../models/Template');
 const Garage = require('../models/Garage');
+const Service = require('../models/Service');
+const { DEFAULT_SERVICES } = require('../controllers/serviceController');
 
 async function seedDatabase() {
     try {
+        // Ensure dynamic services exist
+        const serviceCount = await Service.countDocuments();
+        if (serviceCount === 0) {
+            console.log('🌱 Seeding initial dynamic services...');
+            await Service.insertMany(DEFAULT_SERVICES);
+        }
+
         // Check if data already exists to prevent re-seeding
         const userCount = await User.countDocuments();
         if (userCount > 0) {
@@ -127,10 +136,17 @@ async function seedDatabase() {
                 }
             }
 
-            // Enrich all existing approved garages with categories and multi-services if missing
+            // Enrich only initial sample demo garages with categories and multi-services if missing
             const { STANDARD_SERVICE_TEMPLATES } = require('./serviceTemplates');
-            const allGarages = await Garage.find({});
-            for (const gar of allGarages) {
+            const sampleDemoNames = [
+                'Apex MOT & Service Centre',
+                'Prestige Auto Care',
+                'Cornerstone Garage',
+                'Camden & North London MOT Bay',
+                'Yorkshire Master Auto & MOT'
+            ];
+            const demoGarages = await Garage.find({ name: { $in: sampleDemoNames } });
+            for (const gar of demoGarages) {
                 let modified = false;
                 if (!gar.services || gar.services.length === 0) {
                     gar.services = STANDARD_SERVICE_TEMPLATES.slice(0, 6);

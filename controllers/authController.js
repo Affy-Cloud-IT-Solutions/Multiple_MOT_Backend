@@ -5,6 +5,29 @@ const Garage = require('../models/Garage');
 const Audit = require('../models/Audit');
 const { sendCustomerWelcomeEmail } = require('../services/emailService');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'mot_app_secure_refresh_secret_2026';
+const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
+const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+
+async function generateTokens(user, customerId, garageId) {
+  const payload = {
+    userId: user._id,
+    email: user.email,
+    role: user.role,
+    customerId: customerId || user.customerId,
+    garageId: garageId || user.garageId
+  };
+
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+
+  user.refreshToken = refreshToken;
+  await user.save();
+
+  return { accessToken, refreshToken, token: accessToken };
+}
+
 async function customerLogin(req, res) {
   try {
     const { email, password } = req.body;
@@ -29,12 +52,36 @@ async function customerLogin(req, res) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // Create JWT Token
-    const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role, customerId: user.customerId, garageId: user.garageId },
-      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
-      { expiresIn: '24h' }
-    );
+    // Ensure customer record is linked or auto-created
+    let cust = null;
+    if (user.customerId) {
+      try {
+        cust = await Customer.findById(user.customerId);
+      } catch (e) {
+        cust = null;
+      }
+    }
+    if (!cust) {
+      cust = await Customer.findOne({ email: user.email.toLowerCase().trim() });
+    }
+    if (!cust) {
+      const parts = (user.username || 'Customer').trim().split(' ');
+      cust = await Customer.create({
+        firstName: parts[0] || 'Customer',
+        lastName: parts.slice(1).join(' ') || '',
+        email: user.email.toLowerCase().trim(),
+        mobile: 'N/A',
+        preferredContact: 'Email'
+      });
+    }
+
+    if (!user.customerId || String(user.customerId) !== String(cust._id)) {
+      user.customerId = cust._id;
+      await user.save();
+    }
+
+    // Create Access & Refresh Tokens with verified customerId
+    const tokens = await generateTokens(user, cust._id, user.garageId);
 
     // Create Audit Log in MongoDB
     await Audit.create({
@@ -42,24 +89,20 @@ async function customerLogin(req, res) {
       details: `${user.username} logged in successfully as customer.`
     });
 
-    // Resolve customer full name if available
-    let displayName = user.username;
-    if (user.customerId) {
-      const cust = await Customer.findById(user.customerId);
-      if (cust) {
-        displayName = `${cust.firstName} ${cust.lastName}`.trim();
-      }
-    }
+    // Resolve customer full name
+    const displayName = `${cust.firstName} ${cust.lastName}`.trim() || user.username;
 
     res.json({
       message: 'Login successful.',
-      token,
+      token: tokens.token,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: {
         id: user._id,
-        name: displayName || user.username,
+        name: displayName,
         email: user.email,
         role: user.role,
-        customerId: user.customerId,
+        customerId: cust._id,
         garageId: user.garageId
       }
     });
@@ -103,37 +146,6 @@ async function adminLogin(req, res) {
         return res.status(403).json({ error: 'Associated garage not found. Please register or contact support.' });
       }
 
-      const rejectedDocs = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
-
-      if (garage.status === 'Pending') {
-        return res.status(403).json({ 
-          error: rejectedDocs.length > 0 
-            ? `Action Required: ${rejectedDocs.length} verification document(s) were rejected by Super Admin. Please re-upload updated copies.`
-            : 'Your garage application is currently pending approval by the Platform Super Admin. You will be able to log in once your facility photos and MOT authorization documentation are approved.',
-          status: 'Pending',
-          garageId: garage._id,
-          garageName: garage.name,
-          verificationStatus: garage.verificationStatus,
-          rejectionReason: garage.rejectionReason,
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
-        });
-      }
-
-      if (garage.status === 'Rejected') {
-        const reasonText = garage.rejectionReason ? ` Reason: ${garage.rejectionReason}` : ' Documentation or verification requirements not met.';
-        return res.status(403).json({ 
-          error: `Your garage application was rejected by the Platform Super Admin.${reasonText}`,
-          status: 'Rejected',
-          garageId: garage._id,
-          garageName: garage.name,
-          verificationStatus: garage.verificationStatus,
-          rejectionReason: garage.rejectionReason || 'Documentation or verification requirements not met.',
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
-        });
-      }
-
       if (garage.status === 'Blacklisted') {
         return res.status(403).json({ 
           error: 'This garage account is currently suspended. Please contact platform support.',
@@ -141,25 +153,10 @@ async function adminLogin(req, res) {
           garageName: garage.name
         });
       }
-
-      if (garage.status !== 'Approved') {
-        return res.status(403).json({ 
-          error: `Garage status is currently "${garage.status}". Super Admin approval is required before you can log in.`,
-          status: garage.status,
-          garageId: garage._id,
-          garageName: garage.name,
-          rejectedDocuments: rejectedDocs,
-          verificationDocuments: garage.verificationDocuments
-        });
-      }
     }
 
-    // Create JWT Token
-    const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role, customerId: user.customerId, garageId: user.garageId },
-      process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026',
-      { expiresIn: '24h' }
-    );
+    // Create Access & Refresh Tokens
+    const tokens = await generateTokens(user, user.customerId, user.garageId);
 
     // Create Audit Log in MongoDB
     await Audit.create({
@@ -169,7 +166,9 @@ async function adminLogin(req, res) {
 
     res.json({
       message: 'Login successful.',
-      token,
+      token: tokens.token,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       user: {
         id: user._id,
         name: user.username,
@@ -177,7 +176,15 @@ async function adminLogin(req, res) {
         role: user.role,
         customerId: user.customerId,
         garageId: user.garageId
-      }
+      },
+      garage: typeof garage !== 'undefined' && garage ? {
+        id: garage._id,
+        name: garage.name,
+        status: garage.status,
+        verificationStatus: garage.verificationStatus,
+        verificationDocuments: garage.verificationDocuments,
+        rejectionReason: garage.rejectionReason
+      } : null
     });
   } catch (error) {
     console.error('Admin login error:', error);
@@ -383,6 +390,93 @@ async function getProfile(req, res) {
   }
 }
 
+async function refreshToken(req, res) {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'Refresh token is required.' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        error: 'Refresh token expired or invalid. Please log in again.',
+        tokenExpired: true,
+        code: 'REFRESH_TOKEN_EXPIRED'
+      });
+    }
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User no longer exists.', code: 'USER_NOT_FOUND' });
+    }
+
+    if (user.refreshToken !== refreshToken) {
+      return res.status(403).json({
+        error: 'Refresh token is no longer valid or has been revoked. Please log in again.',
+        tokenExpired: true,
+        code: 'REFRESH_TOKEN_REVOKED'
+      });
+    }
+
+    let customerId = user.customerId;
+    let displayName = user.username;
+    if (user.role === 'customer') {
+      let cust = null;
+      if (customerId) {
+        cust = await Customer.findById(customerId);
+      }
+      if (!cust) {
+        cust = await Customer.findOne({ email: user.email.toLowerCase().trim() });
+      }
+      if (cust) {
+        customerId = cust._id;
+        displayName = `${cust.firstName} ${cust.lastName}`.trim() || user.username;
+      }
+    }
+
+    const tokens = await generateTokens(user, customerId, user.garageId);
+
+    res.json({
+      message: 'Token refreshed successfully.',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      token: tokens.token,
+      user: {
+        id: user._id,
+        name: displayName,
+        email: user.email,
+        role: user.role,
+        customerId,
+        garageId: user.garageId
+      }
+    });
+  } catch (error) {
+    console.error('Refresh token endpoint error:', error);
+    res.status(500).json({ error: 'Internal server error while refreshing token.' });
+  }
+}
+
+async function logout(req, res) {
+  try {
+    const { refreshToken } = req.body;
+    const userId = req.user?.userId;
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, { refreshToken: null });
+    } else if (refreshToken) {
+      await User.findOneAndUpdate({ refreshToken }, { refreshToken: null });
+    }
+
+    res.json({ message: 'Logged out successfully.' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Internal server error during logout.' });
+  }
+}
+
 module.exports = {
   customerLogin,
   adminLogin,
@@ -390,5 +484,8 @@ module.exports = {
   createStaff,
   getStaffList,
   deleteStaff,
-  getProfile
+  getProfile,
+  generateTokens,
+  refreshToken,
+  logout
 };
