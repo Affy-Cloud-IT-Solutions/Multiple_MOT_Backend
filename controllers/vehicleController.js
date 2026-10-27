@@ -90,7 +90,13 @@ async function createVehicle(req, res) {
     const regUpper = registrationNumber.toUpperCase().trim();
     const existingVehicle = await Vehicle.findOne({ registrationNumber: regUpper });
     if (existingVehicle) {
-      return res.status(400).json({ error: 'Vehicle with this registration number is already registered.' });
+      if (customer && existingVehicle.customerId && existingVehicle.customerId.toString() === customer._id.toString()) {
+        return res.status(200).json({
+          message: 'Vehicle is already registered to your account.',
+          vehicle: formatDoc(existingVehicle)
+        });
+      }
+      return res.status(400).json({ error: 'Vehicle with this registration number is already registered under another account.' });
     }
 
     const dateReg = /^\d{4}-\d{2}-\d{2}$/;
