@@ -93,6 +93,11 @@ const AlertSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // Set when the customer dismisses this notification in the app (hides it; does not change the booking status)
+    customerDismissedAt: {
+        type: Date,
+        default: null
+    },
     rescheduled: {
         type: Boolean,
         default: false

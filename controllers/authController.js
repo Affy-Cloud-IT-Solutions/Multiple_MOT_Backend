@@ -9,19 +9,39 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mot_app_secure_secret_token_2026';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'mot_app_secure_refresh_secret_2026';
 const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+// After a rotation the replaced refresh token keeps working this long, so two near-simultaneous refreshes
+// (or a refresh whose response was lost on a flaky mobile connection) don't log the user out
+const REFRESH_TOKEN_REUSE_GRACE_MS = 2 * 60 * 1000;
+
+const buildTokenPayload = (user, customerId, garageId) => ({
+  userId: user._id,
+  email: user.email,
+  role: user.role,
+  customerId: customerId || user.customerId,
+  garageId: garageId || user.garageId
+});
+
+const signAccessToken = (user, customerId, garageId) =>
+  jwt.sign(buildTokenPayload(user, customerId, garageId), JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+
+/** True when `token` is the refresh token replaced by the most recent rotation and that rotation is recent. */
+function isWithinRotationGrace(user, token, now = Date.now()) {
+  return Boolean(
+    token &&
+    user.previousRefreshToken === token &&
+    user.refreshTokenRotatedAt &&
+    now - new Date(user.refreshTokenRotatedAt).getTime() <= REFRESH_TOKEN_REUSE_GRACE_MS
+  );
+}
 
 async function generateTokens(user, customerId, garageId) {
-  const payload = {
-    userId: user._id,
-    email: user.email,
-    role: user.role,
-    customerId: customerId || user.customerId,
-    garageId: garageId || user.garageId
-  };
+  const payload = buildTokenPayload(user, customerId, garageId);
 
   const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
   const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 
+  user.previousRefreshToken = user.refreshToken || null;
+  user.refreshTokenRotatedAt = new Date();
   user.refreshToken = refreshToken;
   await user.save();
 
@@ -413,7 +433,9 @@ async function refreshToken(req, res) {
       return res.status(401).json({ error: 'User no longer exists.', code: 'USER_NOT_FOUND' });
     }
 
-    if (user.refreshToken !== refreshToken) {
+    const isCurrentToken = user.refreshToken === refreshToken;
+    const isGraceReuse = !isCurrentToken && isWithinRotationGrace(user, refreshToken);
+    if (!isCurrentToken && !isGraceReuse) {
       return res.status(403).json({
         error: 'Refresh token is no longer valid or has been revoked. Please log in again.',
         tokenExpired: true,
@@ -437,7 +459,14 @@ async function refreshToken(req, res) {
       }
     }
 
-    const tokens = await generateTokens(user, customerId, user.garageId);
+    // A just-replaced token gets a fresh access token plus the CURRENT refresh token (no second rotation),
+    // so every caller converges on the same latest refresh token
+    const tokens = isGraceReuse
+      ? (() => {
+          const accessToken = signAccessToken(user, customerId, user.garageId);
+          return { accessToken, refreshToken: user.refreshToken, token: accessToken };
+        })()
+      : await generateTokens(user, customerId, user.garageId);
 
     res.json({
       message: 'Token refreshed successfully.',
@@ -465,9 +494,12 @@ async function logout(req, res) {
     const userId = req.user?.userId;
 
     if (userId) {
-      await User.findByIdAndUpdate(userId, { refreshToken: null });
+      await User.findByIdAndUpdate(userId, { refreshToken: null, previousRefreshToken: null });
     } else if (refreshToken) {
-      await User.findOneAndUpdate({ refreshToken }, { refreshToken: null });
+      await User.findOneAndUpdate(
+        { $or: [{ refreshToken }, { previousRefreshToken: refreshToken }] },
+        { refreshToken: null, previousRefreshToken: null }
+      );
     }
 
     res.json({ message: 'Logged out successfully.' });
@@ -486,6 +518,7 @@ module.exports = {
   deleteStaff,
   getProfile,
   generateTokens,
+  isWithinRotationGrace,
   refreshToken,
   logout
 };

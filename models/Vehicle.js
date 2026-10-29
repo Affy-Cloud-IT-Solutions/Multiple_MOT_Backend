@@ -20,8 +20,15 @@ const VehicleSchema = new mongoose.Schema({
     },
     model: {
         type: String,
-        required: [true, 'Model is required'],
+        // Only optional when the make was verified to have no models listed (see vehicleModelService)
+        required: [function () { return this.modelNotListed !== true; }, 'Model is required'],
+        default: '',
         trim: true
+    },
+    // True when the vehicle was saved without a model because its make has no models listed
+    modelNotListed: {
+        type: Boolean,
+        default: false
     },
     year: {
         type: Number,

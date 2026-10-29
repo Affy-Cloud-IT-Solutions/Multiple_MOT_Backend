@@ -43,6 +43,15 @@ const UserSchema = new mongoose.Schema({
     refreshToken: {
         type: String,
         default: null
+    },
+    // The refresh token that was replaced by the last rotation, accepted briefly (see authController.refreshToken)
+    previousRefreshToken: {
+        type: String,
+        default: null
+    },
+    refreshTokenRotatedAt: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true
