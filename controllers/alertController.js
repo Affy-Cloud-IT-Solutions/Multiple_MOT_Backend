@@ -558,7 +558,13 @@ async function createAlert(req, res) {
       (async () => {
         try {
           const cust = customerId ? await Customer.findById(customerId) : null;
-          if (cust) {
+          // The apps create the vehicle (POST /vehicles, which already emails the customer) and then log this
+          // informational alert - don't send the same "Car Added/Approved" email a second time
+          const regUpper = (newAlert.registrationNumber || '').toUpperCase().trim();
+          const vehicleAlreadyEmailed = cust && regUpper
+            ? await Vehicle.exists({ registrationNumber: regUpper, customerId: cust._id })
+            : null;
+          if (cust && !vehicleAlreadyEmailed) {
             if (status === 'Approved' || status === 'Active') {
               sendVehicleApprovalEmail(cust, {
                 registrationNumber: newAlert.registrationNumber,

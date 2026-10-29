@@ -178,6 +178,25 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
   `;
 }
 
+// Errors raised before the SMTP server could have received the message (connecting / greeting).
+// Only these are safe to retry on the fallback port without risking a duplicate email.
+const RETRYABLE_CONNECTION_CODES = new Set(['ECONNECTION', 'ETIMEDOUT', 'EDNS', 'ESOCKET', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENOTFOUND']);
+function isRetryableConnectionError(err) {
+  if (!err || !RETRYABLE_CONNECTION_CODES.has(err.code)) return false;
+  return !err.command || err.command === 'CONN';
+}
+
+function logDispatchFailure({ from, to, subject, text, reason }) {
+  console.error(`[EMAIL SMTP ERROR] Dispatch failed for ${to}: ${reason}`);
+  console.log(`\n======================================================`);
+  console.log(`[EMAIL DISPATCH FAILED - RECORD LOGGED]`);
+  console.log(`FROM:    ${from}`);
+  console.log(`TO:      ${to}`);
+  console.log(`SUBJECT: ${subject}`);
+  console.log(`PREVIEW: ${text || subject}`);
+  console.log(`======================================================\n`);
+}
+
 /**
  * Universal Dispatcher
  */
@@ -188,74 +207,52 @@ async function sendEmail({ to, subject, html, text }) {
   }
 
   const config = getSmtpConfig();
-  const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Tech Trade IT Solutions';
+  const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Multiple MOT UK';
   const fromName = rawFromName.replace(/"/g, '').trim();
-  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'noreply@techtradeitsolutions.com';
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'no-reply@ondoorcarservice.com';
   const from = `"${fromName}" <${fromAddress}>`;
 
   const transport = getTransporter();
 
   if (transport) {
+    const message = {
+      from,
+      sender: fromAddress,
+      to,
+      subject,
+      html,
+      text: text || subject,
+      envelope: {
+        from: fromAddress,
+        to: Array.isArray(to) ? to : [to]
+      }
+    };
+
     try {
-      const sendPromise = transport.sendMail({
-        from,
-        sender: fromAddress,
-        to,
-        subject,
-        html,
-        text: text || subject,
-        envelope: {
-          from: fromAddress,
-          to: Array.isArray(to) ? to : [to]
-        }
-      });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP Connection Timeout on primary port')), 12000)
-      );
-
-      const info = await Promise.race([sendPromise, timeoutPromise]);
+      // No Promise.race timeout here: abandoning a slow send while it keeps running and then re-sending
+      // via the fallback is what delivered duplicate emails. The transport's own connection/socket
+      // timeouts bound how long this can take.
+      const info = await transport.sendMail(message);
       console.log(`[EMAIL DISPATCHED VIA SMTP] To: ${to} | Subject: "${subject}" | MessageId: ${info.messageId}`);
       return true;
     } catch (err) {
-      console.warn(`[EMAIL SMTP NOTICE] Direct SMTP delivery failed (${err.message}). Trying fallback SMTP (Port 587 STARTTLS)...`);
-      
-      // Fallback attempt with Port 587 STARTTLS
+      if (!isRetryableConnectionError(err)) {
+        // The server may already have accepted the message - retrying could deliver it twice
+        logDispatchFailure({ from, to, subject, text, reason: err.message });
+        return false;
+      }
+
+      console.warn(`[EMAIL SMTP NOTICE] Could not connect on primary port (${err.message}). Trying fallback SMTP (Port 587 STARTTLS)...`);
       try {
         const fallbackTransport = createSmtpTransporter(587, false);
         if (!fallbackTransport) {
           throw new Error('Fallback transporter could not be initialized');
         }
-
-        const fallbackSendPromise = fallbackTransport.sendMail({
-          from,
-          sender: fromAddress,
-          to,
-          subject,
-          html,
-          text: text || subject,
-          envelope: {
-            from: fromAddress,
-            to: Array.isArray(to) ? to : [to]
-          }
-        });
-
-        const fallbackTimeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('SMTP Connection Timeout on fallback port 587')), 12000)
-        );
-
-        const fallbackInfo = await Promise.race([fallbackSendPromise, fallbackTimeoutPromise]);
+        const fallbackInfo = await fallbackTransport.sendMail(message);
         console.log(`[EMAIL DISPATCHED VIA FALLBACK 587] To: ${to} | Subject: "${subject}" | MessageId: ${fallbackInfo.messageId}`);
         return true;
       } catch (fallbackErr) {
-        console.error(`[EMAIL SMTP ERROR] All SMTP dispatches failed for ${to}. Primary error: ${err.message} | Fallback error: ${fallbackErr.message}`);
-        console.log(`\n======================================================`);
-        console.log(`[EMAIL DISPATCH FAILED - RECORD LOGGED]`);
-        console.log(`FROM:    ${from}`);
-        console.log(`TO:      ${to}`);
-        console.log(`SUBJECT: ${subject}`);
-        console.log(`PREVIEW: ${text || subject}`);
-        console.log(`======================================================\n`);
+        logDispatchFailure({ from, to, subject, text, reason: `Primary: ${err.message} | Fallback: ${fallbackErr.message}` });
         return false;
       }
     }
@@ -277,7 +274,7 @@ async function sendEmail({ to, subject, html, text }) {
  */
 async function sendDiagnosticTestEmail(toEmail = null) {
   const config = getSmtpConfig();
-  const targetEmail = toEmail || process.env.SUPER_ADMIN_EMAIL || config.user || 'noreply@techtradeitsolutions.com';
+  const targetEmail = toEmail || process.env.SUPER_ADMIN_EMAIL || config.user || 'no-reply@ondoorcarservice.com';
   const timestamp = new Date().toISOString();
 
   const verifyRes = await verifySmtpConnection();
@@ -290,9 +287,9 @@ async function sendDiagnosticTestEmail(toEmail = null) {
     };
   }
 
-  const rawFromName = process.env.MAIL_FROM_NAME || 'Tech Trade IT Solutions';
+  const rawFromName = process.env.MAIL_FROM_NAME || 'Multiple MOT UK';
   const fromName = rawFromName.replace(/"/g, '').trim();
-  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'noreply@techtradeitsolutions.com';
+  const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'no-reply@ondoorcarservice.com';
   const from = `"${fromName}" <${fromAddress}>`;
 
   const html = createHtmlEmailLayout({
@@ -1033,6 +1030,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
 
 module.exports = {
   sendEmail,
+  isRetryableConnectionError,
   verifySmtpConnection,
   sendDiagnosticTestEmail,
   getTransporter,
