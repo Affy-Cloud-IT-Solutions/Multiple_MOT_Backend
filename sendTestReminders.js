@@ -128,8 +128,6 @@ async function runTestDispatches() {
         await vehicle.save();
       }
 
-      const serviceLink = `https://multiplemot.co.uk/portal?reg=${item.reg}&days=${item.daysLeft}`;
-
       console.log(`📨 Sending [${item.label}] for ${item.reg} (${item.make} ${item.model}) - ${item.daysLeft} days left...`);
 
       const res = await sendMotDueReminderEmail(
@@ -137,7 +135,6 @@ async function runTestDispatches() {
         vehicle,
         item.daysLeft,
         expiryFormatted,
-        serviceLink,
         item.stage
       );
 

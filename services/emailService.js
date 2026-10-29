@@ -8,6 +8,8 @@ const { getGarageProfileCompletion } = require('../utils/garageProfile');
 // attachment also shows up as a downloadable attachment chip in Gmail and other mail apps.
 const BRAND_NAME = 'Ondoorcarservice';
 const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL || 'https://api.ondoorcarservice.com/images/ondoorcarservice_Logo.png?v=2';
+// Support/help address shown in emails - the same mailbox the emails are sent from
+const SUPPORT_EMAIL = process.env.MAIL_FROM_ADDRESS || 'no-reply@ondoorcarservice.com';
 
 // ---------- Template value helpers: show real data or say it's missing - never invent values ----------
 const NOT_PROVIDED = 'Not provided yet';
@@ -204,7 +206,6 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
     .notice-box { background-color: #EFF6FF; border-left: 4px solid #1677FF; border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 14px 0; font-size: 13px; line-height: 1.5; color: #1E3A8A; }
     .notice-title { font-weight: 800; margin-bottom: 2px; }
     .footer { background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 18px 20px; text-align: center; font-size: 11px; color: #64748B; line-height: 1.6; }
-    .footer a { color: #1677FF; text-decoration: none; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -221,8 +222,8 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
         ${contentHtml}
       </div>
       <div class="footer">
-        <p>This email was sent by Multiple MOT UK.<br>© ${currentYear} Multiple MOT UK. All rights reserved.</p>
-        <p>Need help? Email us at <a href="mailto:support@multiplemot.co.uk">support@multiplemot.co.uk</a></p>
+        <p>This email was sent by Ondoorcarservice.<br>© ${currentYear} Ondoorcarservice. All rights reserved.</p>
+        <p>Need help? Email us at ${SUPPORT_EMAIL}</p>
       </div>
     </div>
   </div>
@@ -346,7 +347,7 @@ async function sendDiagnosticTestEmail(toEmail = null) {
   const from = `"${fromName}" <${fromAddress}>`;
 
   const html = createHtmlEmailLayout({
-    title: 'Multiple MOT UK - Email Test Successful',
+    title: 'Ondoorcarservice - Email Test Successful',
     badgeText: 'Test Passed',
     badgeColor: '#059669',
     contentHtml: `
@@ -362,8 +363,6 @@ async function sendDiagnosticTestEmail(toEmail = null) {
         <div>All automated MOT reminders and booking emails are ready to send.</div>
       </div>
     `,
-    ctaText: 'Open Motorist Portal',
-    ctaUrl: 'https://multiplemot.co.uk/portal'
   });
 
   try {
@@ -372,9 +371,9 @@ async function sendDiagnosticTestEmail(toEmail = null) {
       from,
       sender: fromAddress,
       to: targetEmail,
-      subject: `[Test Email] Multiple MOT UK Email Service Verified (${timestamp})`,
+      subject: `[Test Email] Ondoorcarservice Email Service Verified (${timestamp})`,
       html,
-      text: `Multiple MOT UK email test passed at ${timestamp}. Sent via ${verifyRes.host}:${verifyRes.portUsed} (${verifyRes.encryption})`,
+      text: `Ondoorcarservice email test passed at ${timestamp}. Sent via ${verifyRes.host}:${verifyRes.portUsed} (${verifyRes.encryption})`,
       envelope: {
         from: fromAddress,
         to: [targetEmail]
@@ -409,11 +408,11 @@ async function sendDiagnosticTestEmail(toEmail = null) {
 async function sendCustomerWelcomeEmail(customer) {
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const html = createHtmlEmailLayout({
-    title: 'Welcome to Multiple MOT UK',
+    title: 'Welcome to Ondoorcarservice',
     badgeText: 'Account Created',
     badgeColor: '#059669',
     contentHtml: `
-      <p class="text">Welcome to Multiple MOT UK, <strong>${customerName}</strong>! Your account is now active and ready to use.</p>
+      <p class="text">Welcome to Ondoorcarservice, <strong>${customerName}</strong>! Your account is now active and ready to use.</p>
       <p class="text">You can now save your cars, get free MOT reminders before they expire, and book MOT tests with trusted local garages.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Name:</span><span class="info-val">${customerName}</span></div>
@@ -421,20 +420,13 @@ async function sendCustomerWelcomeEmail(customer) {
         <div class="info-row"><span class="info-label">MOT Reminders:</span><span class="info-val" style="color: #059669;">Active (45, 30, 15 & 7 days before expiry)</span></div>
       </div>
     `,
-    ctaText: 'Go to My Account',
-    ctaUrl: 'https://multiplemot.co.uk/portal',
-    secondaryActions: [
-      { label: 'Add a Car', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Local Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'Check MOT Date', url: 'https://multiplemot.co.uk' },
-    ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: 'Welcome to Multiple MOT UK - Account Created',
+    subject: 'Welcome to Ondoorcarservice - Account Created',
     html,
-    text: `Welcome to Multiple MOT UK, ${customerName}! Your account (${customer.email}) is ready and set up for free MOT reminders.`
+    text: `Welcome to Ondoorcarservice, ${customerName}! Your account (${customer.email}) is ready and set up for free MOT reminders.`
   });
 }
 
@@ -447,7 +439,7 @@ async function sendGarageRegistrationEmail(garage, ownerUser) {
     badgeColor: '#D97706',
     contentHtml: `
       <p class="text">Hello <strong>${ownerName}</strong>, we have received your sign-up application for <strong>${garageName}</strong>.</p>
-      <p class="text">Our team is reviewing your garage details. We will email you as soon as your account is approved and live on Multiple MOT UK.</p>
+      <p class="text">Our team is reviewing your garage details. We will email you as soon as your account is approved and live on Ondoorcarservice.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${hasText(garage.vtsNumber) ? garage.vtsNumber : NOT_PROVIDED}</span></div>
@@ -455,17 +447,11 @@ async function sendGarageRegistrationEmail(garage, ownerUser) {
         <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Waiting for Review ⏳</span></div>
       </div>
     `,
-    ctaText: 'Open Garage Portal',
-    ctaUrl: 'https://multiplemot.co.uk/admin',
-    secondaryActions: [
-      { label: 'Garage Portal', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Help & Support', url: 'mailto:support@multiplemot.co.uk' },
-    ]
   });
 
   return sendEmail({
     to: garage.email || ownerUser?.email,
-    subject: `[Application Received] ${garageName} - Multiple MOT UK`,
+    subject: `[Application Received] ${garageName} - Ondoorcarservice`,
     html,
     text: `Hello ${ownerName}, we have received your application for ${garageName}. It is currently under review.`
   });
@@ -488,18 +474,13 @@ async function sendSuperAdminNewGarageAlert(garage) {
         <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
       </div>
     `,
-    ctaText: 'Review Garage in Admin Panel',
-    ctaUrl: 'https://multiplemot.co.uk/super-admin',
-    secondaryActions: [
-      { label: 'Admin Dashboard', url: 'https://multiplemot.co.uk/super-admin' },
-    ]
   });
 
   return sendEmail({
     to: superAdminEmail,
     subject: `[Admin Alert] New Garage Sign-Up: ${garageName}`,
     html,
-    text: `A new garage (${garageName}) has signed up on Multiple MOT UK and needs your review.`
+    text: `A new garage (${garageName}) has signed up on Ondoorcarservice and needs your review.`
   });
 }
 
@@ -517,8 +498,8 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
       <p class="text">
         ${isApproved 
           ? (profile.complete
-              ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Multiple MOT UK. Drivers can now find your garage and book online.`
-              : `Great news! Your garage <strong>${garageName}</strong> is approved on Multiple MOT UK. To appear to drivers and receive bookings, please complete your garage profile in the dashboard (still to do: ${missingSteps.join(', ')}).`)
+              ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Ondoorcarservice. Drivers can now find your garage and book online.`
+              : `Great news! Your garage <strong>${garageName}</strong> is approved on Ondoorcarservice. To appear to drivers and receive bookings, please complete your garage profile in the dashboard (still to do: ${missingSteps.join(', ')}).`)
           : `We are sorry, but your garage application for <strong>${garageName}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved && reason ? `
@@ -533,25 +514,19 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
         <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
       </div>
     `,
-    ctaText: isApproved ? 'Go to Garage Dashboard' : 'Contact Support',
-    ctaUrl: isApproved ? 'https://multiplemot.co.uk/admin' : 'mailto:support@multiplemot.co.uk',
-    secondaryActions: [
-      { label: 'Garage Dashboard', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Help & Support', url: 'mailto:support@multiplemot.co.uk' },
-    ]
   });
 
   return sendEmail({
     to: garage.email,
     subject: isApproved
       ? (profile.complete
-          ? `[Approved] ${garageName} is live on Multiple MOT UK`
+          ? `[Approved] ${garageName} is live on Ondoorcarservice`
           : `[Approved] ${garageName} - complete your profile to go live`)
       : `[Update] Application for ${garageName}`,
     html,
     text: isApproved
       ? (profile.complete
-          ? `Great news! Your garage ${garageName} is approved and live on Multiple MOT UK.`
+          ? `Great news! Your garage ${garageName} is approved and live on Ondoorcarservice.`
           : `Your garage ${garageName} is approved. Complete your profile (${missingSteps.join(', ')}) to appear to drivers.`)
       : `Your application for ${garageName} was not approved: ${reason}`
   });
@@ -585,12 +560,6 @@ async function sendBookingRequestEmailCustomer(booking, customer, garage) {
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}${formatPrice(booking.price) ? ` (${formatPrice(booking.price)})` : ''}</span></div>
       </div>
     `,
-    ctaText: 'View My Bookings',
-    ctaUrl: 'https://multiplemot.co.uk/portal',
-    secondaryActions: [
-      { label: 'My Bookings', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
-    ]
   });
 
   return sendEmail({
@@ -625,12 +594,6 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}${formatPrice(booking.price) ? ` (${formatPrice(booking.price)})` : ''}</span></div>
       </div>
     `,
-    ctaText: 'Review & Accept Booking',
-    ctaUrl: 'https://multiplemot.co.uk/admin',
-    secondaryActions: [
-      { label: 'Garage Bookings', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Garage Calendar', url: 'https://multiplemot.co.uk/admin' },
-    ]
   });
 
   return sendEmail({
@@ -670,12 +633,6 @@ async function sendBookingConfirmedEmail(booking, customer, garage) {
         <div>${isMot ? 'Please try to arrive 10 minutes before your appointment time.' : 'Please bring your vehicle to the garage on this date during opening hours.'} Bring your vehicle service history or log book (V5C) if available.</div>
       </div>
     `,
-    ctaText: 'Get Driving Directions',
-    ctaUrl: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${garage.name} ${garage.address} ${garage.postcode}`)}`,
-    secondaryActions: [
-      { label: 'View in My Account', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Change Booking', url: 'https://multiplemot.co.uk/portal' },
-    ]
   });
 
   return sendEmail({
@@ -705,12 +662,6 @@ async function sendBookingRejectedEmail(booking, customer, garage, reason = '') 
       ` : ''}
       <p class="text">You can easily pick another time or choose a different local garage.</p>
     `,
-    ctaText: 'Find Another Garage or Time',
-    ctaUrl: 'https://multiplemot.co.uk/garages',
-    secondaryActions: [
-      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'My Account', url: 'https://multiplemot.co.uk/portal' },
-    ]
   });
 
   return sendEmail({
@@ -750,12 +701,6 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
         <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${formatGarageLocation(garage, { includeAddress: true }) || NOT_PROVIDED}</span></div>
       </div>
     `,
-    ctaText: 'View in My Account',
-    ctaUrl: 'https://multiplemot.co.uk/portal',
-    secondaryActions: [
-      { label: 'My Bookings', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Garage Details', url: 'https://multiplemot.co.uk/garages' },
-    ]
   });
 
   return sendEmail({
@@ -789,12 +734,6 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
         <div class="info-row"><span class="info-label">${isMot ? 'New Time Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTimeDisplay}</span></div>
       </div>
     `,
-    ctaText: 'Open Garage Schedule',
-    ctaUrl: 'https://multiplemot.co.uk/admin',
-    secondaryActions: [
-      { label: 'Garage Bookings', url: 'https://multiplemot.co.uk/admin' },
-      { label: 'Garage Calendar', url: 'https://multiplemot.co.uk/admin' },
-    ]
   });
 
   return sendEmail({
@@ -911,17 +850,11 @@ async function sendVehiclePendingEmail(customer, vehicle) {
         <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Waiting for Approval ⏳</span></div>
       </div>
     `,
-    ctaText: 'View My Cars',
-    ctaUrl: 'https://multiplemot.co.uk/portal',
-    secondaryActions: [
-      { label: 'My Cars', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
-    ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: `[Car Added] ${reg} (${makeModel}) - Multiple MOT UK`,
+    subject: `[Car Added] ${reg} (${makeModel}) - Ondoorcarservice`,
     html,
     text: `Your car ${reg} (${makeModel}) has been added and is waiting for garage approval.`
   });
@@ -941,7 +874,7 @@ async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', 
     contentHtml: `
       <p class="text">
         ${isApproved 
-          ? `Great news! Your car <strong>${reg}</strong> (${makeModel}) has been <strong>approved</strong> on Multiple MOT UK.` 
+          ? `Great news! Your car <strong>${reg}</strong> (${makeModel}) has been <strong>approved</strong> on Ondoorcarservice.` 
           : `We are sorry, but your car <strong>${reg}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved && reason ? `
@@ -963,23 +896,17 @@ async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', 
         </div>
       ` : ''}
     `,
-    ctaText: isApproved ? 'Book an MOT Test' : 'Contact Support',
-    ctaUrl: isApproved ? 'https://multiplemot.co.uk/portal' : 'mailto:support@multiplemot.co.uk',
-    secondaryActions: [
-      { label: 'Book MOT Test', url: 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
-    ]
   });
 
   return sendEmail({
     to: customer.email,
-    subject: isApproved ? `[Approved] Car ${reg} (${makeModel}) - Multiple MOT UK` : `[Update] Car ${reg} Registration`,
+    subject: isApproved ? `[Approved] Car ${reg} (${makeModel}) - Ondoorcarservice` : `[Update] Car ${reg} Registration`,
     html,
-    text: isApproved ? `Great news! Your car ${reg} (${makeModel}) is approved on Multiple MOT UK.` : `Your car ${reg} was not approved: ${reason}`
+    text: isApproved ? `Great news! Your car ${reg} (${makeModel}) is approved on Ondoorcarservice.` : `Your car ${reg} was not approved: ${reason}`
   });
 }
 
-async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFormatted, serviceLink, stage = '') {
+async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFormatted, stage = '') {
   const reg = vehicle.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const vehicleDesc = describeVehicle(vehicle);
@@ -1078,20 +1005,13 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
       </div>
       ${tipHtml}
     `,
-    ctaText: daysLeft < 0 ? 'Book Urgent MOT Test' : 'Book MOT Test Now',
-    ctaUrl: serviceLink || 'https://multiplemot.co.uk/garages',
-    secondaryActions: [
-      { label: 'Book MOT Test', url: serviceLink || 'https://multiplemot.co.uk/portal' },
-      { label: 'Find Garages', url: 'https://multiplemot.co.uk/garages' },
-      { label: 'My Cars', url: 'https://multiplemot.co.uk/portal' },
-    ]
   });
 
   return sendEmail({
     to: customer.email,
     subject,
     html,
-    text: `Reminder: Your MOT for ${reg}${vehicleDescSuffix} expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your test: ${serviceLink || 'https://multiplemot.co.uk'}`
+    text: `Reminder: Your MOT for ${reg}${vehicleDescSuffix} expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your MOT test in the Ondoorcarservice app.`
   });
 }
 
