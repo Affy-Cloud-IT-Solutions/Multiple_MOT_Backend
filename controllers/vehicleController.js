@@ -3,6 +3,7 @@ const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const { isValidVRN } = require('../utils/validators');
+const { getModelsForMake, checkModelRequirement } = require('../services/vehicleModelService');
 const { sendVehiclePendingEmail, sendVehicleApprovalEmail } = require('../services/emailService');
 
 const formatDoc = (doc) => {
@@ -64,8 +65,8 @@ async function createVehicle(req, res) {
   try {
     const { customerId, registrationNumber, make, model, year, motExpiryDate, lastServiceDate } = req.body;
 
-    if (!registrationNumber || !make || !model || !motExpiryDate) {
-      return res.status(400).json({ error: 'Registration plate, make, model, and MOT expiry date are required.' });
+    if (!registrationNumber || !make || !motExpiryDate) {
+      return res.status(400).json({ error: 'Registration plate, make, and MOT expiry date are required.' });
     }
 
     let customer = null;
@@ -118,12 +119,19 @@ async function createVehicle(req, res) {
       }
     }
 
+    // Model is required unless the make genuinely has no models listed in the data source
+    const modelCheck = await checkModelRequirement(make, model);
+    if (!modelCheck.ok) {
+      return res.status(modelCheck.status).json({ error: modelCheck.error });
+    }
+
     const vehicleStatus = req.body.status || 'Active';
     const newVehicle = await Vehicle.create({
       customerId: customer._id,
       registrationNumber: regUpper,
       make: make.toUpperCase().trim(),
-      model: model.toUpperCase().trim(),
+      model: modelCheck.modelNotListed ? '' : model.toUpperCase().trim(),
+      modelNotListed: modelCheck.modelNotListed,
       year: year || 2018,
       motExpiryDate: new Date(motExpiryDate),
       lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : undefined,
@@ -132,7 +140,7 @@ async function createVehicle(req, res) {
 
     await Audit.create({
       activity: 'Vehicle Added',
-      details: `Added vehicle ${newVehicle.make} ${newVehicle.model} (${newVehicle.registrationNumber}) for customer ${customer.firstName} ${customer.lastName} (Status: ${vehicleStatus})`
+      details: `Added vehicle ${newVehicle.make}${newVehicle.model ? ` ${newVehicle.model}` : ''} (${newVehicle.registrationNumber}) for customer ${customer.firstName} ${customer.lastName} (Status: ${vehicleStatus})`
     });
 
     // Email dispatch to customer
@@ -474,38 +482,35 @@ async function getModels(req, res) {
     const limit = parseInt(req.query.limit, 10) || 20;
     const search = (req.query.search || '').trim().toLowerCase();
 
-    // 1. Call external NHTSA API
-    const url = `https://vpic.nhtsa.dot.gov/api/vehicles/getmodelsformake/${encodeURIComponent(make)}?format=json`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch models from NHTSA API: ${response.statusText}`);
-    }
-    const data = await response.json();
-    
-    let models = [];
-    if (data && data.Results) {
-      // 2. Map and extract unique model names, clean whitespace, and capitalize
-      models = data.Results.map(r => r.Model_Name ? r.Model_Name.trim().toUpperCase() : '');
-      models = models.filter(m => m !== '');
-      
-      // 3. Remove duplicates
-      models = [...new Set(models)].sort();
+    // 1. All known models for the make (UK catalogue, or NHTSA with an exact make match)
+    let lookup;
+    try {
+      lookup = await getModelsForMake(make);
+    } catch (err) {
+      console.error('Error fetching models:', err.message);
+      return res.status(502).json({
+        error: 'Could not load models for this make right now. Please try again.',
+        code: 'MODELS_UNAVAILABLE'
+      });
     }
 
-    // 4. Filter by optional search term
+    // 2. Filter by optional search term
+    let models = lookup.models;
     if (search) {
       models = models.filter(m => m.toLowerCase().includes(search));
     }
 
-    // 5. Paginate results
+    // 3. Paginate results
     const total = models.length;
     const totalPages = Math.ceil(total / limit);
     const start = (page - 1) * limit;
     const paginated = models.slice(start, start + limit);
 
-    // 6. Return response containing models and pagination details
+    // 4. hasModels tells the app whether a model must be chosen for this make (independent of search/page)
     res.json({
       models: paginated,
+      hasModels: lookup.models.length > 0,
+      source: lookup.source,
       pagination: {
         total,
         page,

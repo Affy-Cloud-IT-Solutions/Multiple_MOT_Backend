@@ -325,7 +325,7 @@ async function createAlert(req, res) {
       } else {
         // Date-only booking (non-MOT service: Servicing, Repairs, Brakes, Diagnostics, etc.)
         // No time slots exist for non-MOT services!
-        normalizedSlotTime = slotTime || '';
+        normalizedSlotTime = slotTime || 'Full Day Drop-off';
         assignedStationId = undefined;
         assignedStationName = undefined;
       }
@@ -343,6 +343,24 @@ async function createAlert(req, res) {
         }
       }
 
+      // Compute other non-MOT services names if any
+      const otherServicesList = reqServices.filter(s => {
+        const cat = (s.category || '').toUpperCase();
+        const n = (s.name || '').toUpperCase();
+        return cat !== 'MOT' && !n.includes('MOT');
+      });
+      const otherServicesNames = otherServicesList.map(s => s.name).join(', ');
+
+      let cleanMakeModel = makeModel ? makeModel.split(' - ')[0].trim() : (registrationNumber || 'Vehicle');
+      let formattedMakeModel = makeModel;
+      if (isBookingHasMot) {
+        formattedMakeModel = otherServicesNames 
+          ? `${cleanMakeModel} - MOT Slot: ${normalizedSlotTime} & Service: ${otherServicesNames}`
+          : `${cleanMakeModel} - Slot: ${normalizedSlotTime}`;
+      } else {
+        formattedMakeModel = `${cleanMakeModel} - Workshop Drop-off (${finalServiceName})`;
+      }
+
       const existingAlert = await Alert.findOne({
         type: 'BOOKED',
         registrationNumber: registrationNumber.toUpperCase().trim(),
@@ -354,7 +372,7 @@ async function createAlert(req, res) {
         existingAlert.customerName = finalCustName;
         if (finalEmail) existingAlert.customerEmail = finalEmail;
         if (finalMobile) existingAlert.customerMobile = finalMobile;
-        existingAlert.makeModel = makeModel;
+        existingAlert.makeModel = formattedMakeModel;
         existingAlert.serviceName = finalServiceName;
         existingAlert.services = reqServices.length > 0 ? reqServices : existingAlert.services;
         existingAlert.hasMot = isBookingHasMot;
@@ -451,7 +469,7 @@ async function createAlert(req, res) {
       slotTime: normalizedSlotTime,
       slotNumber: computedSlotNumber,
       registrationNumber,
-      makeModel,
+      makeModel: formattedMakeModel || makeModel,
       serviceName: finalServiceName,
       services: reqServices,
       hasMot: isBookingHasMot,
@@ -684,6 +702,35 @@ async function approveAlert(req, res) {
   }
 }
 
+// Customer hides a notification (e.g. "Booking Rejected by Garage") from their app.
+// Only marks it dismissed - the booking keeps its status, so history and filters stay accurate.
+async function dismissAlertForCustomer(req, res) {
+  try {
+    const alert = await Alert.findById(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ error: 'Alert not found.' });
+    }
+
+    if (req.user?.role !== 'customer') {
+      return res.status(403).json({ error: 'Only the customer can dismiss their own notifications.' });
+    }
+    const ownsById = alert.customerId && String(alert.customerId) === String(req.user.customerId);
+    const ownsByEmail = !alert.customerId && alert.customerEmail && req.user.email &&
+      alert.customerEmail.trim().toLowerCase() === req.user.email.trim().toLowerCase();
+    if (!ownsById && !ownsByEmail) {
+      return res.status(403).json({ error: 'Access denied. You can only dismiss your own notifications.' });
+    }
+
+    if (!alert.customerDismissedAt) {
+      alert.customerDismissedAt = new Date();
+      await alert.save();
+    }
+    res.json({ message: 'Notification dismissed.', alert: formatDoc(alert) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 async function acknowledgeAlert(req, res) {
   try {
     const alert = await Alert.findById(req.params.id);
@@ -911,17 +958,22 @@ async function rescheduleAlert(req, res) {
         '11:30', '12:15', '13:00', '13:45',
         '14:30', '15:15', '16:00', '16:45'
       ];
-      const slotIndex = standardSlots.indexOf(slotClean);
-      if (slotIndex !== -1) {
-        alert.slotNumber = slotIndex + 1;
-      }
+      const otherServicesList = (alert.services || []).filter(s => {
+        const cat = (s.category || '').toUpperCase();
+        const n = (s.name || '').toUpperCase();
+        return cat !== 'MOT' && !n.includes('MOT');
+      });
+      const otherServicesNames = otherServicesList.map(s => s.name).join(', ');
+      alert.makeModel = otherServicesNames 
+        ? `${vehiclePart} - MOT Slot: ${slotClean} & Service: ${otherServicesNames}`
+        : `${vehiclePart} - Slot: ${slotClean}`;
     } else {
       // Date-only service booking
-      alert.slotTime = '';
+      alert.slotTime = 'Full Day Drop-off';
       alert.slotNumber = undefined;
       alert.stationId = undefined;
       alert.stationName = undefined;
-      alert.makeModel = `${vehiclePart} - ${alert.serviceName || 'Service'}`;
+      alert.makeModel = `${vehiclePart} - Workshop Drop-off (${alert.serviceName || 'Service'})`;
     }
   
     alert.date = new Date(dateStr);
@@ -1094,6 +1146,7 @@ module.exports = {
   createAlert,
   approveAlert,
   acknowledgeAlert,
+  dismissAlertForCustomer,
   rejectAlert,
   rescheduleAlert,
   cancelAlert

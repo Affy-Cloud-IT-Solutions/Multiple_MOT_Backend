@@ -9,6 +9,7 @@ router.get('/', authMiddleware, alertController.getAllAlerts);
 router.post('/', authMiddleware.optional, alertController.createAlert);
 router.put('/:id/approve', authMiddleware, alertController.approveAlert);
 router.put('/:id/acknowledge', authMiddleware, alertController.acknowledgeAlert);
+router.put('/:id/dismiss', authMiddleware, alertController.dismissAlertForCustomer);
 router.put('/:id/reject', authMiddleware, alertController.rejectAlert);
 router.put('/:id/reschedule', authMiddleware, alertController.rescheduleAlert);
 router.put('/:id/cancel', authMiddleware, alertController.cancelAlert);
