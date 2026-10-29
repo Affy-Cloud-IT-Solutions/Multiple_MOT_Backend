@@ -7,7 +7,7 @@ const { getGarageProfileCompletion } = require('../utils/garageProfile');
 // Loaded from the backend's public /images route rather than attached to the email: an inline (CID)
 // attachment also shows up as a downloadable attachment chip in Gmail and other mail apps.
 const BRAND_NAME = 'Ondoorcarservice';
-const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL || 'https://api.ondoorcarservice.com/images/ondoorcarservice_Logo.png';
+const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL || 'https://api.ondoorcarservice.com/images/ondoorcarservice_Logo.png?v=2';
 
 // ---------- Template value helpers: show real data or say it's missing - never invent values ----------
 const NOT_PROVIDED = 'Not provided yet';
