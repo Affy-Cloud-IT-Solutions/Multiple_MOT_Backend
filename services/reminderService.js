@@ -63,22 +63,17 @@ async function runDailyCheck(referenceDate = null) {
     const vehicleDesc = `${vehicle.make} ${vehicle.model}`.trim();
     const expiryFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toISOString().substring(0, 10) : dateISO;
 
-    // Build payload and token
-    const payload = { customerId: customer._id.toString(), vehicleId: vehicle._id.toString(), milestone };
-    const token = Buffer.from(JSON.stringify(payload)).toString('base64');
-    const serviceLink = `https://multiplemot.co.uk/update?id=${token}`;
-
     const template = templates.motDue || templates.t30 || "Dear [Name], Your [Vehicle] ([Reg]) MOT is due on [Expiry].";
     let message = template
       .replace('[Name]', customerName)
       .replace('[Vehicle]', vehicleDesc)
       .replace('[Reg]', vehicle.registrationNumber)
       .replace('[Expiry]', expiryFormatted);
-    message += `\nManage & book MOT here: ${serviceLink}`;
+    message += '\nBook your MOT test in the Ondoorcarservice app.';
 
     // Dispatch communication
     if (customer.preferredContact === 'Email' || !customer.preferredContact) {
-      sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryFormatted, serviceLink, milestone).catch(err =>
+      sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryFormatted, milestone).catch(err =>
         console.error(`[reminderService] Failed to dispatch ${milestone} reminder email:`, err.message)
       );
     } else {
