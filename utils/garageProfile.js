@@ -21,7 +21,10 @@ function getGarageProfileCompletion(garage) {
     documents: Boolean(g.documentsConfigured) || hasDocuments
   };
   const missing = Object.keys(steps).filter(key => !steps[key]);
-  return { complete: missing.length === 0, steps, missing };
+  // Same 4-item checklist the garage admin sees: registration (always done once the garage exists) + the 3 steps
+  const totalTasks = Object.keys(steps).length + 1;
+  const percent = Math.round(((totalTasks - missing.length) / totalTasks) * 100);
+  return { complete: missing.length === 0, steps, missing, percent };
 }
 
 function isGarageVisibleToCustomers(garage) {
