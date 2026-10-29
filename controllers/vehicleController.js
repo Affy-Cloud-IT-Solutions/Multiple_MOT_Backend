@@ -3,6 +3,15 @@ const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const { isValidVRN } = require('../utils/validators');
+const { canAccessCustomer } = require('../utils/accessControl');
+
+// A vehicle is accessible to whoever may access its owner
+async function canAccessVehicle(user, vehicle) {
+  if (!user || !vehicle) return false;
+  if (user.role === 'admin') return true;
+  const owner = vehicle.customerId ? await Customer.findById(vehicle.customerId) : null;
+  return canAccessCustomer(user, owner);
+}
 const { getModelsForMake, checkModelRequirement } = require('../services/vehicleModelService');
 const { sendVehiclePendingEmail, sendVehicleApprovalEmail } = require('../services/emailService');
 
@@ -23,6 +32,11 @@ async function getAllVehicles(req, res) {
       }
       query.customerId = req.user.customerId;
     } else if (req.query.customerId) {
+      // Staff may only list vehicles of customers they manage
+      const requested = mongoose.Types.ObjectId.isValid(req.query.customerId) ? await Customer.findById(req.query.customerId) : null;
+      if (!requested || !(await canAccessCustomer(req.user, requested))) {
+        return res.status(403).json({ error: 'Access denied for this customer.' });
+      }
       query.customerId = req.query.customerId;
     } else if (role === 'garage_admin' || role === 'staff') {
       const garageId = req.user?.garageId;
@@ -54,6 +68,9 @@ async function getVehicleById(req, res) {
     const vehicle = await Vehicle.findById(req.params.id);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found.' });
+    }
+    if (!(await canAccessVehicle(req.user, vehicle))) {
+      return res.status(403).json({ error: 'Access denied. You can only manage your own or your garage\'s customers\' vehicles.' });
     }
     res.json(formatDoc(vehicle));
   } catch (error) {
@@ -175,6 +192,9 @@ async function updateVehicle(req, res) {
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found.' });
     }
+    if (!(await canAccessVehicle(req.user, vehicle))) {
+      return res.status(403).json({ error: 'Access denied. You can only manage your own or your garage\'s customers\' vehicles.' });
+    }
 
     if (make) vehicle.make = make.toUpperCase().trim();
     if (model) vehicle.model = model.toUpperCase().trim();
@@ -201,6 +221,10 @@ async function updateVehicle(req, res) {
 
 async function deleteVehicle(req, res) {
   try {
+    const existing = mongoose.Types.ObjectId.isValid(req.params.id) ? await Vehicle.findById(req.params.id) : null;
+    if (existing && !(await canAccessVehicle(req.user, existing))) {
+      return res.status(403).json({ error: 'Access denied. You can only manage your own or your garage\'s customers\' vehicles.' });
+    }
     const vehicle = await Vehicle.findByIdAndDelete(req.params.id);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found.' });

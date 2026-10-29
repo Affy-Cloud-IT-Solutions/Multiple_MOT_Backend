@@ -52,6 +52,8 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Public brand images (e.g. the logo shown in emails)
+app.use('/images', express.static(path.join(__dirname, 'images')));
 
 // Log request information (simple local logging)
 app.use((req, res, next) => {
@@ -129,7 +131,8 @@ app.get('/api/health/smtp', async (req, res) => {
 });
 
 // Test Email Dispatch Endpoint
-app.post('/api/health/test-email', async (req, res) => {
+// Admins only: sends an email to any address given in the body
+app.post('/api/health/test-email', require('./middleware/auth'), require('./middleware/requireRole')('admin'), async (req, res) => {
   try {
     const { to } = req.body || {};
     const result = await sendDiagnosticTestEmail(to);

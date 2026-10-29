@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
+const requireRole = require('../middleware/requireRole');
 
 const { verifySmtpConnection, sendDiagnosticTestEmail } = require('../services/emailService');
 
@@ -16,7 +17,8 @@ router.delete('/staff/:id', authMiddleware, authController.deleteStaff);
 router.get('/profile', authMiddleware, authController.getProfile);
 
 // SMTP Test & Diagnostic Endpoint
-router.all('/test-smtp', async (req, res) => {
+// Admins only: with ?to= this sends an email to any address
+router.all('/test-smtp', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const to = req.body?.to || req.query?.to;
     if (to) {

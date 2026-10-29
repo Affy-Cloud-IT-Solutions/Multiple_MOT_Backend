@@ -4,6 +4,7 @@ const Vehicle = require('../models/Vehicle');
 const Customer = require('../models/Customer');
 const Audit = require('../models/Audit');
 const Garage = require('../models/Garage');
+const { isGarageVisibleToCustomers, canManageGarage } = require('../utils/garageProfile');
 const {
   sendBookingRequestEmailCustomer,
   sendBookingRequestEmailGarage,
@@ -203,6 +204,8 @@ async function createAlert(req, res) {
     let assignedStationId = stationId;
     let assignedStationName = stationName;
     let normalizedSlotTime = '';
+    // Function scope: also used by Alert.create below (non-booking alerts keep the submitted makeModel)
+    let formattedMakeModel = makeModel;
 
     // Normalize date (convert DD-MM-YYYY to YYYY-MM-DD if needed)
     let isoDateStr = '';
@@ -224,6 +227,10 @@ async function createAlert(req, res) {
       const garage = await Garage.findById(targetGarageId);
       if (garage && garage.status !== 'Approved') {
         return res.status(400).json({ error: 'This garage is currently under review and cannot accept bookings yet.' });
+      }
+      // Customers can only book garages that are visible to them (profile complete); the garage's own staff can still book
+      if (garage && !isGarageVisibleToCustomers(garage) && !canManageGarage(req.user, garage)) {
+        return res.status(400).json({ error: 'This garage is not accepting online bookings yet.' });
       }
 
       // Check if the entire date is closed/blocked by the garage for workshop intake
@@ -352,7 +359,7 @@ async function createAlert(req, res) {
       const otherServicesNames = otherServicesList.map(s => s.name).join(', ');
 
       let cleanMakeModel = makeModel ? makeModel.split(' - ')[0].trim() : (registrationNumber || 'Vehicle');
-      let formattedMakeModel = makeModel;
+      formattedMakeModel = makeModel;
       if (isBookingHasMot) {
         formattedMakeModel = otherServicesNames 
           ? `${cleanMakeModel} - MOT Slot: ${normalizedSlotTime} & Service: ${otherServicesNames}`
@@ -361,11 +368,17 @@ async function createAlert(req, res) {
         formattedMakeModel = `${cleanMakeModel} - Workshop Drop-off (${finalServiceName})`;
       }
 
+      // An upcoming active booking for this vehicle at this garage is updated (rescheduled) in place.
+      // Past-dated bookings are left alone as history, so a new booking creates a new record.
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const startOfTodayUtc = new Date(`${startOfToday.toISOString().split('T')[0]}T00:00:00.000Z`);
       const existingAlert = await Alert.findOne({
         type: 'BOOKED',
         registrationNumber: registrationNumber.toUpperCase().trim(),
         garageId: targetGarageId,
-        status: { $in: ['Pending', 'Approved'] }
+        status: { $in: ['Pending', 'Approved'] },
+        date: { $gte: new Date(Math.min(startOfToday.getTime(), startOfTodayUtc.getTime())) }
       });
       if (existingAlert) {
         existingAlert.customerId = finalCustomerId || existingAlert.customerId;
@@ -569,7 +582,7 @@ async function createAlert(req, res) {
               sendVehicleApprovalEmail(cust, {
                 registrationNumber: newAlert.registrationNumber,
                 makeModel: newAlert.makeModel,
-                motExpiryDate: newAlert.date
+                motExpiryDate: req.body.motExpiryDate || undefined
               }, 'Approved').catch(err =>
                 console.error('[alertController] Failed to send vehicle approved email:', err.message)
               );
@@ -577,7 +590,7 @@ async function createAlert(req, res) {
               sendVehiclePendingEmail(cust, {
                 registrationNumber: newAlert.registrationNumber,
                 makeModel: newAlert.makeModel,
-                motExpiryDate: newAlert.date
+                motExpiryDate: req.body.motExpiryDate || undefined
               }).catch(err =>
                 console.error('[alertController] Failed to send vehicle pending email:', err.message)
               );

@@ -1,6 +1,58 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 const dns = require('dns');
+const { getGarageProfileCompletion } = require('../utils/garageProfile');
+
+// ---------- Brand logo ----------
+// Loaded from the backend's public /images route rather than attached to the email: an inline (CID)
+// attachment also shows up as a downloadable attachment chip in Gmail and other mail apps.
+const BRAND_NAME = 'Ondoorcarservice';
+const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL || 'https://api.ondoorcarservice.com/images/ondoorcarservice_Logo.png';
+
+// ---------- Template value helpers: show real data or say it's missing - never invent values ----------
+const NOT_PROVIDED = 'Not provided yet';
+const hasText = (value) => typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null && value !== '';
+
+/**
+ * "Address, City (Postcode)" from what the garage actually entered. The city alone is not trusted:
+ * registration/schema default it to "London" when nothing was entered.
+ */
+function formatGarageLocation(garage, { includeAddress = false } = {}) {
+  if (!garage) return '';
+  const hasPostcode = hasText(garage.postcode);
+  const hasAddress = hasText(garage.address);
+  const cityTrusted = hasText(garage.city) && (hasPostcode || hasAddress || Boolean(garage.locationConfigured));
+  const parts = [
+    includeAddress && hasAddress ? garage.address.trim() : null,
+    cityTrusted ? garage.city.trim() : null
+  ].filter(Boolean);
+  let text = parts.join(', ');
+  if (hasPostcode) text = text ? `${text} (${garage.postcode.trim()})` : garage.postcode.trim();
+  return text;
+}
+
+/** "£45.00", or '' when the price is unknown (never a made-up default) */
+function formatPrice(price) {
+  if (price === undefined || price === null || price === '') return '';
+  const n = Number(price);
+  return Number.isFinite(n) ? `£${n.toFixed(2)}` : '';
+}
+
+/** Stored makeModel carries booking suffixes ("FORD FOCUS - MOT Slot: 09:15 & Service: ..."); keep the car only */
+function cleanMakeModel(makeModel) {
+  return String(makeModel || '').split(' - ')[0].split(' (Slot:')[0].trim();
+}
+
+function describeVehicle(vehicle) {
+  if (!vehicle) return '';
+  return `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || cleanMakeModel(vehicle.makeModel);
+}
+
+function dropOffLabel(garage) {
+  const open = garage?.openingTime;
+  const close = garage?.closingTime;
+  return open && close ? `Full-Day Drop-off (${open} - ${close})` : `Full-Day Drop-off (Workshop Hours)`;
+}
 
 // Ensure reliable DNS resolution for SMTP delivery on Windows/Node
 try {
@@ -135,10 +187,10 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F1F5F9; margin: 0; padding: 0; color: #1E293B; }
     .wrapper { width: 100%; background-color: #F1F5F9; padding: 32px 16px; box-sizing: border-box; }
     .container { max-width: 580px; margin: 0 auto; background-color: #FFFFFF; border-radius: 12px; overflow: hidden; border: 1px solid #E2E8F0; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08); }
-    .header { background-color: #0B1F33; padding: 24px; text-align: center; border-bottom: 3px solid #1677FF; }
-    .brand-title { font-size: 20px; font-weight: 900; color: #FFFFFF; letter-spacing: 0.8px; margin: 0; text-transform: uppercase; }
-    .brand-title span { color: #1677FF; }
-    .brand-sub { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: 600; }
+    .header { background-color: #FFFFFF; padding: 22px 24px 18px; text-align: center; border-bottom: 3px solid #1677FF; }
+    .brand-logo { display: block; margin: 0 auto 8px; width: 180px; max-width: 180px; height: auto; border: 0; }
+    .brand-title { font-size: 20px; font-weight: 900; color: #0B1F33; letter-spacing: 0.4px; margin: 0; }
+    .brand-sub { font-size: 11px; color: #64748B; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; font-weight: 600; }
     .body { padding: 28px 24px; }
     .badge { display: inline-block; padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 12px; }
     .title { font-size: 19px; font-weight: 800; color: #0B1F33; margin: 0 0 12px 0; line-height: 1.4; }
@@ -159,7 +211,8 @@ function createHtmlEmailLayout({ title, badgeText, badgeColor = '#1677FF', conte
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1 class="brand-title">MULTIPLE MOT <span>UK</span></h1>
+        ${EMAIL_LOGO_URL ? `<img class="brand-logo" src="${EMAIL_LOGO_URL}" alt="${BRAND_NAME}" width="180" />` : ''}
+        <h1 class="brand-title">${BRAND_NAME}</h1>
         <div class="brand-sub">UK MOT Reminders & Booking</div>
       </div>
       <div class="body">
@@ -207,7 +260,7 @@ async function sendEmail({ to, subject, html, text }) {
   }
 
   const config = getSmtpConfig();
-  const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Multiple MOT UK';
+  const rawFromName = process.env.MAIL_FROM_NAME || process.env.EMAIL_FROM_NAME || 'Ondoorcarservice';
   const fromName = rawFromName.replace(/"/g, '').trim();
   const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'no-reply@ondoorcarservice.com';
   const from = `"${fromName}" <${fromAddress}>`;
@@ -287,7 +340,7 @@ async function sendDiagnosticTestEmail(toEmail = null) {
     };
   }
 
-  const rawFromName = process.env.MAIL_FROM_NAME || 'Multiple MOT UK';
+  const rawFromName = process.env.MAIL_FROM_NAME || 'Ondoorcarservice';
   const fromName = rawFromName.replace(/"/g, '').trim();
   const fromAddress = process.env.MAIL_FROM_ADDRESS || config.user || 'no-reply@ondoorcarservice.com';
   const from = `"${fromName}" <${fromAddress}>`;
@@ -397,8 +450,8 @@ async function sendGarageRegistrationEmail(garage, ownerUser) {
       <p class="text">Our team is reviewing your garage details. We will email you as soon as your account is approved and live on Multiple MOT UK.</p>
       <div class="card-box">
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${garage.vtsNumber || 'Provided'}</span></div>
-        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || 'UK'} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${hasText(garage.vtsNumber) ? garage.vtsNumber : NOT_PROVIDED}</span></div>
+        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
         <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #D97706; font-weight: 800;">Waiting for Review ⏳</span></div>
       </div>
     `,
@@ -431,8 +484,8 @@ async function sendSuperAdminNewGarageAlert(garage) {
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">Email:</span><span class="info-val">${garage.email || 'N/A'}</span></div>
         <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${garage.vtsNumber || 'See Docs'}</span></div>
-        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">VTS Number:</span><span class="info-val">${hasText(garage.vtsNumber) ? garage.vtsNumber : NOT_PROVIDED}</span></div>
+        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
       </div>
     `,
     ctaText: 'Review Garage in Admin Panel',
@@ -453,6 +506,9 @@ async function sendSuperAdminNewGarageAlert(garage) {
 async function sendGarageStatusEmail(garage, status, reason = '') {
   const isApproved = status === 'Approved';
   const garageName = garage.name || 'Your Garage';
+  // Customers only see approved garages whose profile (location, services, documents) is complete
+  const profile = getGarageProfileCompletion(garage);
+  const missingSteps = profile.missing.map(step => ({ location: 'location', services: 'services & prices', documents: 'MOT/DVLA documents' }[step] || step));
   const html = createHtmlEmailLayout({
     title: isApproved ? `Garage Approved: ${garageName}` : `Application Update: ${garageName}`,
     badgeText: isApproved ? 'Garage Live' : 'Application Update',
@@ -460,7 +516,9 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
     contentHtml: `
       <p class="text">
         ${isApproved 
-          ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Multiple MOT UK. Drivers can now find your garage and book MOT test slots online.` 
+          ? (profile.complete
+              ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Multiple MOT UK. Drivers can now find your garage and book online.`
+              : `Great news! Your garage <strong>${garageName}</strong> is approved on Multiple MOT UK. To appear to drivers and receive bookings, please complete your garage profile in the dashboard (still to do: ${missingSteps.join(', ')}).`)
           : `We are sorry, but your garage application for <strong>${garageName}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved && reason ? `
@@ -471,8 +529,8 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
       ` : ''}
       <div class="card-box">
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? 'Approved & Live ✅' : 'Rejected ❌'}</span></div>
-        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${garage.city || ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? (profile.complete ? 'Approved & Live ✅' : 'Approved - complete your profile to go live') : 'Rejected ❌'}</span></div>
+        <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
       </div>
     `,
     ctaText: isApproved ? 'Go to Garage Dashboard' : 'Contact Support',
@@ -485,9 +543,17 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
 
   return sendEmail({
     to: garage.email,
-    subject: isApproved ? `[Approved] ${garageName} is live on Multiple MOT UK` : `[Update] Application for ${garageName}`,
+    subject: isApproved
+      ? (profile.complete
+          ? `[Approved] ${garageName} is live on Multiple MOT UK`
+          : `[Approved] ${garageName} - complete your profile to go live`)
+      : `[Update] Application for ${garageName}`,
     html,
-    text: isApproved ? `Great news! Your garage ${garageName} is approved and live on Multiple MOT UK.` : `Your application for ${garageName} was not approved: ${reason}`
+    text: isApproved
+      ? (profile.complete
+          ? `Great news! Your garage ${garageName} is approved and live on Multiple MOT UK.`
+          : `Your garage ${garageName} is approved. Complete your profile (${missingSteps.join(', ')}) to appear to drivers.`)
+      : `Your application for ${garageName} was not approved: ${reason}`
   });
 }
 
@@ -497,11 +563,11 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
 
 async function sendBookingRequestEmailCustomer(booking, customer, garage) {
   const reg = booking.registrationNumber || 'Vehicle';
-  const makeModel = booking.makeModel || '';
+  const makeModel = cleanMakeModel(booking.makeModel);
   const garageName = garage?.name || 'Selected Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
-  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : dropOffLabel(garage);
   const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
@@ -516,7 +582,7 @@ async function sendBookingRequestEmailCustomer(booking, customer, garage) {
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
         <div class="info-row"><span class="info-label">Date:</span><span class="info-val">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'Time Slot:' : 'Appointment Type:'}</span><span class="info-val">${slotTimeDisplay}</span></div>
-        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName} (£${booking.price || 45})</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}${formatPrice(booking.price) ? ` (${formatPrice(booking.price)})` : ''}</span></div>
       </div>
     `,
     ctaText: 'View My Bookings',
@@ -540,7 +606,7 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || booking.customerName || 'Customer';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
-  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : dropOffLabel(garage);
   const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
@@ -553,10 +619,10 @@ async function sendBookingRequestEmailGarage(booking, customer, garage) {
       <div class="card-box">
         <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
         <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">Requested Date:</span><span class="info-val">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'Requested Time:' : 'Schedule:'}</span><span class="info-val">${slotTimeDisplay}</span></div>
-        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName} (£${booking.price || 45})</span></div>
+        <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}${formatPrice(booking.price) ? ` (${formatPrice(booking.price)})` : ''}</span></div>
       </div>
     `,
     ctaText: 'Review & Accept Booking',
@@ -580,9 +646,9 @@ async function sendBookingConfirmedEmail(booking, customer, garage) {
   const garageName = garage?.name || 'Your Garage';
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
-  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : 'Full-Day Drop-off (08:00 - 18:00)';
+  const slotTimeDisplay = isMot ? (booking.slotTime || 'Selected Slot') : dropOffLabel(garage);
   const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
-  const servicePrice = booking.price !== undefined ? `£${booking.price}` : '';
+  const servicePrice = formatPrice(booking.price);
 
   const html = createHtmlEmailLayout({
     title: `${serviceName} Confirmed`,
@@ -592,11 +658,11 @@ async function sendBookingConfirmedEmail(booking, customer, garage) {
       <p class="text">Great news! Your booking for <strong>${serviceName}</strong> on car <strong>${reg}</strong> at <strong>${garageName}</strong> is confirmed.</p>
       <div class="card-box" style="border: 2px solid #059669;">
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val" style="color: #059669; font-weight: 800;">${serviceName} ${servicePrice ? `(${servicePrice})` : ''}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">Date:</span><span class="info-val" style="color: #059669; font-weight: 800;">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'Time:' : 'Drop-off:'}</span><span class="info-val" style="color: #059669; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}, ${garage.city || ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${formatGarageLocation(garage, { includeAddress: true }) || NOT_PROVIDED}</span></div>
         <div class="info-row"><span class="info-label">Phone:</span><span class="info-val">${garage.phone || 'N/A'}</span></div>
       </div>
       <div class="notice-box">
@@ -661,9 +727,9 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
   const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
-  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : dropOffLabel(garage);
   const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
-  const servicePrice = booking.price !== undefined ? `£${booking.price}` : '';
+  const servicePrice = formatPrice(booking.price);
 
   const html = createHtmlEmailLayout({
     title: isApproved ? `${serviceName} Rescheduled` : 'Reschedule Request Sent',
@@ -677,11 +743,11 @@ async function sendBookingRescheduledEmailCustomer(booking, customer, garage, is
       </p>
       <div class="card-box" style="border: 2px solid ${isApproved ? '#059669' : '#D97706'};">
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${serviceName} ${servicePrice ? `(${servicePrice})` : ''}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'New Time:' : 'Drop-off:'}</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#D97706'}; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>
+        <div class="info-row"><span class="info-label">Address:</span><span class="info-val">${formatGarageLocation(garage, { includeAddress: true }) || NOT_PROVIDED}</span></div>
       </div>
     `,
     ctaText: 'View in My Account',
@@ -706,7 +772,7 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
   const bookingDate = booking.date ? new Date(booking.date).toLocaleDateString('en-GB') : 'Selected Date';
   const isMot = booking.hasMot !== false && Boolean(booking.slotTime) && (booking.hasMot || (booking.serviceName && booking.serviceName.toLowerCase().includes('mot')));
   const slotTime = booking.slotTime || (booking.makeModel && booking.makeModel.includes(' - Slot: ') ? booking.makeModel.split(' - Slot: ')[1] : '');
-  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : 'Full-Day Drop-off (Workshop Hours)';
+  const slotTimeDisplay = isMot ? (slotTime || 'Selected Slot') : dropOffLabel(garage);
   const serviceName = booking.serviceName || (isMot ? 'MOT Test' : 'Vehicle Service');
 
   const html = createHtmlEmailLayout({
@@ -718,7 +784,7 @@ async function sendBookingRescheduledEmailGarage(booking, customer, garage) {
       <div class="card-box" style="border-left: 4px solid #D97706;">
         <div class="info-row"><span class="info-label">Customer Name:</span><span class="info-val">${customerName}</span></div>
         <div class="info-row"><span class="info-label">Phone Number:</span><span class="info-val">${customer.mobile || 'N/A'}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel || ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">New Date:</span><span class="info-val" style="color: #D97706; font-weight: 800;">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'New Time Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #D97706; font-weight: 800;">${slotTimeDisplay}</span></div>
       </div>
@@ -758,11 +824,11 @@ async function sendBookingCancelledEmailCustomer(booking, customer, garage, canc
       </p>
       <div class="card-box" style="border: 2px solid #EF4444;">
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'Cancelled Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTimeDisplay}</span></div>
         <div class="info-row"><span class="info-label">Garage:</span><span class="info-val">${garageName}</span></div>
-        ${garage.address ? `<div class="info-row"><span class="info-label">Address:</span><span class="info-val">${garage.address || ''}${garage.city ? `, ${garage.city}` : ''} (${garage.postcode || ''})</span></div>` : ''}
+        ${formatGarageLocation(garage, { includeAddress: true }) ? `<div class="info-row"><span class="info-label">Address:</span><span class="info-val">${formatGarageLocation(garage, { includeAddress: true })}</span></div>` : ''}
         ${reason ? `<div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${reason}</span></div>` : ''}
       </div>
       <p class="text" style="color: #64748B; font-size: 13px; margin-top: 12px;">
@@ -800,7 +866,7 @@ async function sendBookingCancelledEmailGarage(booking, customer, garage, cancel
       <div class="card-box" style="border-left: 4px solid #EF4444;">
         <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${customerName}</span></div>
         <div class="info-row"><span class="info-label">Contact:</span><span class="info-val">${customerPhone}</span></div>
-        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${booking.makeModel ? booking.makeModel.split(' - Slot: ')[0] : ''}</span></div>
+        <div class="info-row"><span class="info-label">Car:</span><span class="info-val"><span class="plate-badge">${reg}</span> ${cleanMakeModel(booking.makeModel)}</span></div>
         <div class="info-row"><span class="info-label">Service:</span><span class="info-val">${serviceName}</span></div>
         <div class="info-row"><span class="info-label">Cancelled Date:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${bookingDate}</span></div>
         <div class="info-row"><span class="info-label">${isMot ? 'Cancelled Slot:' : 'Appointment:'}</span><span class="info-val" style="color: #EF4444; font-weight: 800;">${slotTimeDisplay}</span></div>
@@ -828,8 +894,8 @@ async function sendBookingCancelledEmailGarage(booking, customer, garage, cancel
 async function sendVehiclePendingEmail(customer, vehicle) {
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const reg = vehicle.registrationNumber || 'Vehicle';
-  const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || 'Vehicle';
-  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
+  const makeModel = describeVehicle(vehicle) || 'Vehicle';
+  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : NOT_PROVIDED;
 
   const html = createHtmlEmailLayout({
     title: `Car Added: ${reg}`,
@@ -865,8 +931,8 @@ async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', 
   const isApproved = status === 'Approved' || status === 'Active';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
   const reg = vehicle.registrationNumber || 'Vehicle';
-  const makeModel = `${vehicle.make || ''} ${vehicle.model || ''}`.trim() || vehicle.makeModel || 'Vehicle';
-  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : 'N/A';
+  const makeModel = describeVehicle(vehicle) || 'Vehicle';
+  const motDateFormatted = vehicle.motExpiryDate ? new Date(vehicle.motExpiryDate).toLocaleDateString('en-GB') : NOT_PROVIDED;
 
   const html = createHtmlEmailLayout({
     title: isApproved ? `Car Approved: ${reg}` : `Car Update: ${reg}`,
@@ -916,13 +982,14 @@ async function sendVehicleApprovalEmail(customer, vehicle, status = 'Approved', 
 async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFormatted, serviceLink, stage = '') {
   const reg = vehicle.registrationNumber || 'Vehicle';
   const customerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'there';
-  const vehicleDesc = `${vehicle.make || ''} ${vehicle.model || ''}`.trim();
+  const vehicleDesc = describeVehicle(vehicle);
+  const vehicleDescSuffix = vehicleDesc ? ` (${vehicleDesc})` : '';
 
   let badgeText = 'MOT Reminder';
   let badgeColor = '#1677FF';
   let title = `MOT Due in ${daysLeft} Days: ${reg}`;
   let subject = `[MOT Due] ${reg} expires in ${daysLeft} days (${expiryDateFormatted})`;
-  let openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>.`;
+  let openingSentence = `Reminder: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>.`;
   let tipHtml = `
     <div class="notice-box">
       <div class="notice-title">Good to Know</div>
@@ -936,7 +1003,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeColor = '#1677FF';
     title = `Advance Notice: MOT Due in ${daysLeft} Days (${reg})`;
     subject = `[Advance Notice] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
-    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. You can book your test slot early.`;
+    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. You can book your test slot early.`;
     tipHtml = `
       <div class="notice-box">
         <div class="notice-title">Plan Ahead</div>
@@ -949,7 +1016,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeColor = '#D97706';
     title = `MOT Due in ${daysLeft} Days (${reg})`;
     subject = `[MOT Due in 30 Days] ${reg} expires on ${expiryDateFormatted} - Book Now`;
-    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Your 30-day early renewal window is now open!`;
+    openingSentence = `Reminder: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Your 30-day early renewal window is now open!`;
     tipHtml = `
       <div class="notice-box">
         <div class="notice-title">Keep Your MOT Date</div>
@@ -962,7 +1029,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeColor = '#EA580C';
     title = `Important: MOT Due in ${daysLeft} Days (${reg})`;
     subject = `[Important] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
-    openingSentence = `Important: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book soon.`;
+    openingSentence = `Important: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book soon.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #EA580C; background-color: #FFF7ED; color: #9A3412;">
         <div class="notice-title">Book Before Slots Fill Up</div>
@@ -975,7 +1042,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeColor = '#DC2626';
     title = `Final Reminder: MOT Expires in ${daysLeft} Days (${reg})`;
     subject = `[FINAL REMINDER] ${reg} MOT expires in ${daysLeft} days (${expiryDateFormatted})`;
-    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book today.`;
+    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expires in <strong>${daysLeft} days</strong> on <strong>${expiryDateFormatted}</strong>. Please book today.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #DC2626; background-color: #FEF2F2; color: #991B1B;">
         <div class="notice-title">Action Needed Today</div>
@@ -988,7 +1055,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     badgeColor = '#991B1B';
     title = `MOT Expired: ${reg}`;
     subject = `[EXPIRED] MOT for ${reg} has expired (${expiryDateFormatted})`;
-    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong> (${vehicleDesc}) expired on <strong>${expiryDateFormatted}</strong>. Please book a test immediately.`;
+    openingSentence = `Urgent: Your MOT for <strong>${reg}</strong>${vehicleDescSuffix} expired on <strong>${expiryDateFormatted}</strong>. Please book a test immediately.`;
     tipHtml = `
       <div class="notice-box" style="border-left-color: #991B1B; background-color: #FEF2F2; color: #991B1B;">
         <div class="notice-title">Do Not Drive on the Road</div>
@@ -1005,7 +1072,7 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
       <p class="text">${openingSentence}</p>
       <div class="card-box" style="border: 2px solid ${badgeColor};">
         <div class="info-row"><span class="info-label">Number Plate:</span><span class="info-val"><span class="plate-badge">${reg}</span></span></div>
-        <div class="info-row"><span class="info-label">Car Model:</span><span class="info-val">${vehicleDesc}</span></div>
+        <div class="info-row"><span class="info-label">Car Model:</span><span class="info-val">${vehicleDesc || NOT_PROVIDED}</span></div>
         <div class="info-row"><span class="info-label">MOT Expiry Date:</span><span class="info-val" style="color: ${badgeColor}; font-size: 14px; font-weight: 800;">${expiryDateFormatted}</span></div>
         <div class="info-row"><span class="info-label">Time Left:</span><span class="info-val" style="color: ${badgeColor}; font-weight: 800;">${daysLeft >= 0 ? `${daysLeft} Days Left` : `Expired (${Math.abs(daysLeft)} days ago)`}</span></div>
       </div>
@@ -1024,12 +1091,15 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
     to: customer.email,
     subject,
     html,
-    text: `Reminder: Your MOT for ${reg} (${vehicleDesc}) expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your test: ${serviceLink || 'https://multiplemot.co.uk'}`
+    text: `Reminder: Your MOT for ${reg}${vehicleDescSuffix} expires on ${expiryDateFormatted} (${daysLeft >= 0 ? `${daysLeft} days left` : 'EXPIRED'}). Book your test: ${serviceLink || 'https://multiplemot.co.uk'}`
   });
 }
 
 module.exports = {
   sendEmail,
+  formatGarageLocation,
+  formatPrice,
+  cleanMakeModel,
   isRetryableConnectionError,
   verifySmtpConnection,
   sendDiagnosticTestEmail,

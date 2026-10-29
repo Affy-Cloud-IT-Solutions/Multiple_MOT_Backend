@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
 const Garage = require('../models/Garage');
@@ -12,6 +13,8 @@ const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
 // After a rotation the replaced refresh token keeps working this long, so two near-simultaneous refreshes
 // (or a refresh whose response was lost on a flaky mobile connection) don't log the user out
 const REFRESH_TOKEN_REUSE_GRACE_MS = 2 * 60 * 1000;
+// Signed-in devices kept per user; the oldest session is dropped beyond this
+const MAX_REFRESH_SESSIONS = 10;
 
 const buildTokenPayload = (user, customerId, garageId) => ({
   userId: user._id,
@@ -34,14 +37,45 @@ function isWithinRotationGrace(user, token, now = Date.now()) {
   );
 }
 
-async function generateTokens(user, customerId, garageId) {
+/** Same grace rule for one device session */
+function isSessionWithinGrace(session, token, now = Date.now()) {
+  return Boolean(
+    token && session && session.previousToken === token && session.rotatedAt &&
+    now - new Date(session.rotatedAt).getTime() <= REFRESH_TOKEN_REUSE_GRACE_MS
+  );
+}
+
+/**
+ * Issues an access token + refresh token.
+ * - New sign-in (no rotateFrom): adds a device session, keeping other devices signed in.
+ * - Refresh (rotateFrom = the device's current refresh token): rotates only that device's session.
+ */
+async function generateTokens(user, customerId, garageId, { rotateFrom = null } = {}) {
   const payload = buildTokenPayload(user, customerId, garageId);
 
   const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
-  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  // jwtid makes every refresh token unique, even two issued for the same user in the same second
+  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY, jwtid: crypto.randomUUID() });
+  const now = new Date();
 
-  user.previousRefreshToken = user.refreshToken || null;
-  user.refreshTokenRotatedAt = new Date();
+  if (!Array.isArray(user.refreshSessions)) user.refreshSessions = [];
+  const session = rotateFrom ? user.refreshSessions.find(s => s.token === rotateFrom) : null;
+  if (session) {
+    session.previousToken = rotateFrom;
+    session.rotatedAt = now;
+    session.token = refreshToken;
+  } else {
+    user.refreshSessions.push({ token: refreshToken, previousToken: rotateFrom || null, rotatedAt: rotateFrom ? now : null, createdAt: now });
+    if (user.refreshSessions.length > MAX_REFRESH_SESSIONS) {
+      user.refreshSessions.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      user.refreshSessions.splice(0, user.refreshSessions.length - MAX_REFRESH_SESSIONS);
+    }
+  }
+  if (typeof user.markModified === 'function') user.markModified('refreshSessions');
+
+  // Legacy single-token fields (tokens issued before per-device sessions keep working)
+  user.previousRefreshToken = rotateFrom || user.refreshToken || null;
+  user.refreshTokenRotatedAt = now;
   user.refreshToken = refreshToken;
   await user.save();
 
@@ -157,11 +191,13 @@ async function adminLogin(req, res) {
     }
 
     // For garage admins and staff, verify garage approval status
+    // (declared here so the login response below can include the garage)
+    let garage = null;
     if (user.role === 'garage_admin' || user.role === 'staff') {
       if (!user.garageId) {
         return res.status(403).json({ error: 'No associated garage record found for this account.' });
       }
-      const garage = await Garage.findById(user.garageId);
+      garage = await Garage.findById(user.garageId);
       if (!garage) {
         return res.status(403).json({ error: 'Associated garage not found. Please register or contact support.' });
       }
@@ -197,7 +233,7 @@ async function adminLogin(req, res) {
         customerId: user.customerId,
         garageId: user.garageId
       },
-      garage: typeof garage !== 'undefined' && garage ? {
+      garage: garage ? {
         id: garage._id,
         name: garage.name,
         status: garage.status,
@@ -433,8 +469,15 @@ async function refreshToken(req, res) {
       return res.status(401).json({ error: 'User no longer exists.', code: 'USER_NOT_FOUND' });
     }
 
-    const isCurrentToken = user.refreshToken === refreshToken;
-    const isGraceReuse = !isCurrentToken && isWithinRotationGrace(user, refreshToken);
+    const sessions = Array.isArray(user.refreshSessions) ? user.refreshSessions : [];
+    const currentSession = sessions.find(s => s.token === refreshToken);
+    const graceSession = currentSession ? null : sessions.find(s => isSessionWithinGrace(s, refreshToken));
+    // Tokens issued before per-device sessions existed are still honoured once (and migrated)
+    const isLegacyCurrent = !currentSession && !graceSession && user.refreshToken === refreshToken;
+    const isLegacyGrace = !currentSession && !graceSession && !isLegacyCurrent && isWithinRotationGrace(user, refreshToken);
+
+    const isCurrentToken = Boolean(currentSession || isLegacyCurrent);
+    const isGraceReuse = Boolean(graceSession || isLegacyGrace);
     if (!isCurrentToken && !isGraceReuse) {
       return res.status(403).json({
         error: 'Refresh token is no longer valid or has been revoked. Please log in again.',
@@ -464,9 +507,9 @@ async function refreshToken(req, res) {
     const tokens = isGraceReuse
       ? (() => {
           const accessToken = signAccessToken(user, customerId, user.garageId);
-          return { accessToken, refreshToken: user.refreshToken, token: accessToken };
+          return { accessToken, refreshToken: graceSession ? graceSession.token : user.refreshToken, token: accessToken };
         })()
-      : await generateTokens(user, customerId, user.garageId);
+      : await generateTokens(user, customerId, user.garageId, { rotateFrom: refreshToken });
 
     res.json({
       message: 'Token refreshed successfully.',
@@ -493,13 +536,30 @@ async function logout(req, res) {
     const { refreshToken } = req.body;
     const userId = req.user?.userId;
 
-    if (userId) {
-      await User.findByIdAndUpdate(userId, { refreshToken: null, previousRefreshToken: null });
-    } else if (refreshToken) {
-      await User.findOneAndUpdate(
-        { $or: [{ refreshToken }, { previousRefreshToken: refreshToken }] },
-        { refreshToken: null, previousRefreshToken: null }
-      );
+    if (refreshToken) {
+      // Sign out this device only - other signed-in devices stay signed in
+      const user = await User.findOne({
+        $or: [
+          { 'refreshSessions.token': refreshToken },
+          { 'refreshSessions.previousToken': refreshToken },
+          { refreshToken },
+          { previousRefreshToken: refreshToken }
+        ]
+      });
+      if (user) {
+        user.refreshSessions = (user.refreshSessions || []).filter(
+          s => s.token !== refreshToken && s.previousToken !== refreshToken
+        );
+        if (typeof user.markModified === 'function') user.markModified('refreshSessions');
+        if (user.refreshToken === refreshToken || user.previousRefreshToken === refreshToken) {
+          user.refreshToken = null;
+          user.previousRefreshToken = null;
+        }
+        await user.save();
+      }
+    } else if (userId) {
+      // No device token given: sign out everywhere
+      await User.findByIdAndUpdate(userId, { refreshToken: null, previousRefreshToken: null, refreshSessions: [] });
     }
 
     res.json({ message: 'Logged out successfully.' });

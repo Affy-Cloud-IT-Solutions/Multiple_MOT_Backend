@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
+const { getGarageProfileCompletion, isGarageVisibleToCustomers, canManageGarage } = require('../utils/garageProfile');
 const jwt = require('jsonwebtoken');
 const { 
   sendGarageRegistrationEmail, 
@@ -28,11 +29,14 @@ const formatDoc = (doc) => {
   const images = (obj.images && obj.images.length > 0) 
     ? obj.images 
     : DEFAULT_GARAGE_IMAGES.slice(0, 3);
-  return { 
-    ...obj, 
+  const profileCompletion = getGarageProfileCompletion(obj);
+  return {
+    ...obj,
     id: (obj._id || obj.id || '').toString(),
     images,
-    logoUrl: obj.logoUrl || images[0] || ''
+    logoUrl: obj.logoUrl || images[0] || '',
+    profileCompletion,
+    isVisibleToCustomers: obj.status === 'Approved' && profileCompletion.complete
   };
 };
 
@@ -97,7 +101,7 @@ async function registerGarage(req, res) {
     const newGarage = await Garage.create({
       name: finalGarageName,
       address: (address || '').trim(),
-      city: (city || 'London').trim(),
+      city: (city || '').trim(),
       postcode: (postcode || '').trim(),
       latitude: Number(latitude) || 51.5074,
       longitude: Number(longitude) || -0.1278,
@@ -195,13 +199,19 @@ async function getGarages(req, res) {
   try {
     const role = req.user?.role;
     
-    // Super Admins can see all garages. Customers/unauthenticated users only see Approved garages
+    // Super Admins can see all garages. Customers/unauthenticated users only see Approved garages whose
+    // profile is complete (location, services, documents); garage staff also always see their own garage
     let query = { status: 'Approved' };
     if (role === 'admin') {
       query = {}; // return all garages
+    } else if ((role === 'garage_admin' || role === 'staff') && req.user?.garageId) {
+      query = { $or: [{ status: 'Approved' }, { _id: req.user.garageId }] };
     }
 
-    const garages = await Garage.find(query).sort({ rating: -1 });
+    const found = await Garage.find(query).sort({ rating: -1 });
+    const garages = role === 'admin'
+      ? found
+      : found.filter(g => isGarageVisibleToCustomers(g) || canManageGarage(req.user, g));
 
     // Populate extra metrics for garages
     const enrichedGarages = await Promise.all(
@@ -240,8 +250,8 @@ async function getGarageById(req, res) {
     const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
     const isPlatformAdmin = role === 'admin';
 
-    // Non-approved garages are strictly hidden from customers and unauthenticated users
-    if (garage.status !== 'Approved' && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+    // Non-approved or incomplete-profile garages are strictly hidden from customers and unauthenticated users
+    if (!isGarageVisibleToCustomers(garage) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
       return res.status(404).json({ error: 'Garage not found or is currently not active.' });
     }
 
@@ -835,9 +845,9 @@ async function getGarageSlots(req, res) {
     const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
     const isPlatformAdmin = role === 'admin';
 
-    // Slots are never active or bookable by customers until garage is Approved
-    if (garage.status !== 'Approved' && !isGarageStaffOrAdmin && !isPlatformAdmin) {
-      return res.status(403).json({ error: 'Garage slots are not active or visible to customers until verification approval.' });
+    // Slots are never active or bookable by customers until the garage is Approved and its profile is complete
+    if (!isGarageVisibleToCustomers(garage) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+      return res.status(403).json({ error: 'Garage slots are not active or visible to customers until the garage is approved and its profile is complete.' });
     }
 
     // Filter approved active stations
@@ -1066,6 +1076,9 @@ async function checkGarageStatusByEmail(req, res) {
     if (!garage) {
       return res.json({ hasGarage: false, message: 'No garage application found for this email.' });
     }
+    if (!canManageGarage(req.user, garage)) {
+      return res.status(403).json({ error: 'Access denied. You can only view your own garage application.' });
+    }
 
     const rejectedDocuments = (garage.verificationDocuments || []).filter(d => d.status === 'Rejected');
 
@@ -1098,6 +1111,10 @@ async function resubmitGarageDocument(req, res) {
     const garage = await Garage.findById(id);
     if (!garage) {
       return res.status(404).json({ error: 'Garage not found.' });
+    }
+    // Only the garage's own admin/staff (or a platform admin) may replace its verification documents
+    if (!canManageGarage(req.user, garage)) {
+      return res.status(403).json({ error: 'Access denied. You can only update your own garage documents.' });
     }
 
     const doc = (garage.verificationDocuments.id && garage.verificationDocuments.id(docId)) ||

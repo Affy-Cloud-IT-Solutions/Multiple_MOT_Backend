@@ -5,8 +5,9 @@ const authMiddleware = require('../middleware/auth');
 
 // Public route for onboarding/registration & application status checks
 router.post('/register', garageController.registerGarage);
-router.get('/check-status/:email', garageController.checkGarageStatusByEmail);
-router.put('/:id/documents/:docId/resubmit', garageController.resubmitGarageDocument);
+// Returns verification documents - the garage's own staff or an admin only
+router.get('/check-status/:email', authMiddleware, garageController.checkGarageStatusByEmail);
+router.put('/:id/documents/:docId/resubmit', authMiddleware, garageController.resubmitGarageDocument);
 
 // Public templates catalog route (must be before /:id)
 router.get('/templates/catalog', garageController.getServiceCatalogTemplates);
