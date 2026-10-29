@@ -28,7 +28,8 @@ test('an approved garage with location, an active service and documents is visib
   assert.deepEqual(getGarageProfileCompletion(g), {
     complete: true,
     steps: { location: true, services: true, documents: true },
-    missing: []
+    missing: [],
+    percent: 100
   });
   assert.equal(isGarageVisibleToCustomers(g), true);
 });
@@ -64,6 +65,16 @@ test('older garages without the setup flags count as complete when the real data
 test('address/postcode alone with the default London coordinates does not count as a configured location', () => {
   const g = completeGarage({ locationConfigured: false, latitude: DEFAULT_LATITUDE, longitude: DEFAULT_LONGITUDE });
   assert.equal(getGarageProfileCompletion(g).steps.location, false);
+});
+
+test('percent follows the garage admin checklist: registration + location + services + documents', () => {
+  const justRegistered = {
+    status: 'Pending', address: '', postcode: '', latitude: DEFAULT_LATITUDE, longitude: DEFAULT_LONGITUDE,
+    services: [], verificationDocuments: []
+  };
+  assert.equal(getGarageProfileCompletion(justRegistered).percent, 25);
+  assert.equal(getGarageProfileCompletion({ ...justRegistered, locationConfigured: true }).percent, 50);
+  assert.equal(getGarageProfileCompletion(completeGarage({ services: [] })).percent, 75);
 });
 
 test('canManageGarage: platform admin and the garage\'s own admin/staff only', () => {

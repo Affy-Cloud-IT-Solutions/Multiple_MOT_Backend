@@ -15,26 +15,29 @@ const {
   STANDARD_SERVICE_TEMPLATES 
 } = require('../config/serviceTemplates');
 
-const DEFAULT_GARAGE_IMAGES = [
-  'https://images.unsplash.com/photo-1617886322168-72b886573c3c?w=800&h=500&fit=crop', // 1. Exterior
-  'https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&h=500&fit=crop', // 2. MOT Bay
-  'https://images.unsplash.com/photo-1517524206127-48bbd363f3d7?w=800&h=500&fit=crop', // 3. Reception
-  'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800&h=500&fit=crop', // 4. Workshop
-  'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&h=500&fit=crop'  // 5. Diagnostics
+// Stock photos that older versions of the API filled in for garages with no uploads. The apps sometimes
+// saved them back, so they can be stored on a garage even though the garage never uploaded anything.
+const STOCK_GARAGE_PHOTO_IDS = [
+  'photo-1617886322168-72b886573c3c',
+  'photo-1486006920555-c77dce18193b',
+  'photo-1517524206127-48bbd363f3d7',
+  'photo-1580273916550-e323be2ae537',
+  'photo-1503376780353-7e6692767b70'
 ];
+const isStockGaragePhoto = (url) =>
+  typeof url === 'string' && url.includes('images.unsplash.com') && STOCK_GARAGE_PHOTO_IDS.some(id => url.includes(id));
 
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
-  const images = (obj.images && obj.images.length > 0) 
-    ? obj.images 
-    : DEFAULT_GARAGE_IMAGES.slice(0, 3);
+  // Only photos the garage actually uploaded - an empty list lets the apps show "No photos uploaded"
+  const images = (Array.isArray(obj.images) ? obj.images : []).filter(img => img && !isStockGaragePhoto(img));
   const profileCompletion = getGarageProfileCompletion(obj);
   return {
     ...obj,
     id: (obj._id || obj.id || '').toString(),
     images,
-    logoUrl: obj.logoUrl || images[0] || '',
+    logoUrl: (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : '') || images[0] || '',
     profileCompletion,
     isVisibleToCustomers: obj.status === 'Approved' && profileCompletion.complete
   };
@@ -329,8 +332,8 @@ async function updateGarage(req, res) {
     if (workingDays) garage.workingDays = workingDays;
     if (slots) garage.slots = slots;
     if (blockedSlots) garage.blockedSlots = blockedSlots;
-    if (logoUrl !== undefined) garage.logoUrl = logoUrl;
-    if (images !== undefined) garage.images = Array.isArray(images) ? images : [images];
+    if (logoUrl !== undefined) garage.logoUrl = isStockGaragePhoto(logoUrl) ? '' : logoUrl;
+    if (images !== undefined) garage.images = (Array.isArray(images) ? images : [images]).filter(img => img && !isStockGaragePhoto(img));
     if (req.body.locationConfigured !== undefined) garage.locationConfigured = Boolean(req.body.locationConfigured);
     if (req.body.servicesConfigured !== undefined) garage.servicesConfigured = Boolean(req.body.servicesConfigured);
     if (req.body.documentsConfigured !== undefined) garage.documentsConfigured = Boolean(req.body.documentsConfigured);
