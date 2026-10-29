@@ -5,6 +5,7 @@ const Vehicle = require('../models/Vehicle');
 const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
 const { isValidEmail, isValidMobile } = require('../utils/validators');
+const { canAccessCustomer } = require('../utils/accessControl');
 
 const formatDoc = (doc) => {
   if (!doc) return null;
@@ -49,6 +50,9 @@ async function getCustomerById(req, res) {
 
     if (mongoose.Types.ObjectId.isValid(id)) {
       customer = await Customer.findById(id);
+      if (customer && !(await canAccessCustomer(req.user, customer))) {
+        return res.status(403).json({ error: 'Access denied. You can only view your own or your garage\'s customers.' });
+      }
     }
 
     // Fallback: check if authenticated user matches customer email
@@ -178,6 +182,9 @@ async function updateCustomer(req, res) {
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found.' });
     }
+    if (!(await canAccessCustomer(req.user, customer))) {
+      return res.status(403).json({ error: 'Access denied. You can only manage your own or your garage\'s customers.' });
+    }
 
     if (firstName) customer.firstName = firstName;
     if (lastName) customer.lastName = lastName;
@@ -217,6 +224,17 @@ async function updateCustomer(req, res) {
 
 async function deleteCustomer(req, res) {
   try {
+    // Deleting a profile (and its vehicles) is a staff action, limited to customers the caller manages
+    if (!['admin', 'garage_admin', 'staff'].includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Access denied. Only garage staff or admins can delete customer profiles.' });
+    }
+    const existing = mongoose.Types.ObjectId.isValid(req.params.id) ? await Customer.findById(req.params.id) : null;
+    if (!existing) {
+      return res.status(404).json({ error: 'Customer not found.' });
+    }
+    if (!(await canAccessCustomer(req.user, existing))) {
+      return res.status(403).json({ error: 'Access denied. You can only manage your own or your garage\'s customers.' });
+    }
     const customer = await Customer.findByIdAndDelete(req.params.id);
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found.' });

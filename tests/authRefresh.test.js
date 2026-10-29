@@ -137,16 +137,89 @@ test('isWithinRotationGrace only matches the replaced token inside the window', 
   assert.equal(authController.isWithinRotationGrace({ previousRefreshToken: null }, null, now), false);
 });
 
-test('logout by refresh token also revokes the grace (previous) token', async () => {
-  let query;
-  let update;
-  User.findOneAndUpdate = async (q, u) => {
-    query = q;
-    update = u;
-  };
-  await new Promise(resolve => {
-    authController.logout({ body: { refreshToken: 'rt' } }, { status() { return this; }, json: resolve });
+function callLogout(body, user) {
+  return new Promise(resolve => {
+    authController.logout({ body, user }, { status() { return this; }, json: resolve });
   });
-  assert.deepEqual(query, { $or: [{ refreshToken: 'rt' }, { previousRefreshToken: 'rt' }] });
-  assert.deepEqual(update, { refreshToken: null, previousRefreshToken: null });
+}
+
+test('signing in on a second device keeps the first device signed in (per-device sessions)', async () => {
+  currentUser = makeUser({ refreshSessions: [] });
+  const deviceA = await authController.generateTokens(currentUser, null, null);
+  const deviceB = await authController.generateTokens(currentUser, null, null);
+  assert.notEqual(deviceA.refreshToken, deviceB.refreshToken, 'every refresh token is unique');
+  assert.equal(currentUser.refreshSessions.length, 2);
+
+  // Device A refreshes long after device B signed in - still valid
+  const a = await callRefresh({ refreshToken: deviceA.refreshToken });
+  assert.equal(a.status, 200);
+  // Device B is unaffected by A's rotation
+  const b = await callRefresh({ refreshToken: deviceB.refreshToken });
+  assert.equal(b.status, 200);
+  assert.equal(currentUser.refreshSessions.length, 2);
+  assert.ok(currentUser.refreshSessions.some(s => s.token === a.body.refreshToken));
+  assert.ok(currentUser.refreshSessions.some(s => s.token === b.body.refreshToken));
+});
+
+test('per-device grace: a just-rotated token returns that device\'s current token without rotating again', async () => {
+  currentUser = makeUser({ refreshSessions: [] });
+  const device = await authController.generateTokens(currentUser, null, null);
+  const first = await callRefresh({ refreshToken: device.refreshToken });
+  const retry = await callRefresh({ refreshToken: device.refreshToken });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.refreshToken, first.body.refreshToken);
+  assert.equal(currentUser.refreshSessions.length, 1);
+});
+
+test('a device token outside the grace window is rejected', async () => {
+  const old = signRefresh('64b7f0f0f0f0f0f0f0f0f0f1');
+  currentUser = makeUser({
+    refreshSessions: [{ token: signRefresh('64b7f0f0f0f0f0f0f0f0f0f1'), previousToken: old, rotatedAt: new Date(Date.now() - 5 * 60 * 1000), createdAt: new Date() }]
+  });
+  const { status, body } = await callRefresh({ refreshToken: old });
+  assert.equal(status, 403);
+  assert.equal(body.code, 'REFRESH_TOKEN_REVOKED');
+});
+
+test('tokens issued before per-device sessions still refresh and are migrated into a session', async () => {
+  const legacy = signRefresh('64b7f0f0f0f0f0f0f0f0f0f1');
+  currentUser = makeUser({ refreshToken: legacy, refreshSessions: [] });
+  const { status, body } = await callRefresh({ refreshToken: legacy });
+  assert.equal(status, 200);
+  assert.equal(currentUser.refreshSessions.length, 1);
+  assert.equal(currentUser.refreshSessions[0].token, body.refreshToken);
+});
+
+test('only the most recent sessions are kept', async () => {
+  currentUser = makeUser({ refreshSessions: [] });
+  for (let i = 0; i < 12; i++) await authController.generateTokens(currentUser, null, null);
+  assert.equal(currentUser.refreshSessions.length, 10);
+});
+
+test('logout signs out only this device; other devices keep working', async () => {
+  currentUser = makeUser({ refreshSessions: [] });
+  const deviceA = await authController.generateTokens(currentUser, null, null);
+  const deviceB = await authController.generateTokens(currentUser, null, null);
+  const originalFindOne = User.findOne;
+  User.findOne = async () => currentUser;
+  try {
+    await callLogout({ refreshToken: deviceA.refreshToken });
+  } finally {
+    User.findOne = originalFindOne;
+  }
+  assert.equal(currentUser.refreshSessions.length, 1);
+  assert.equal((await callRefresh({ refreshToken: deviceA.refreshToken })).status, 403);
+  assert.equal((await callRefresh({ refreshToken: deviceB.refreshToken })).status, 200);
+});
+
+test('logout without a device token signs out every device', async () => {
+  let update;
+  const originalFindByIdAndUpdate = User.findByIdAndUpdate;
+  User.findByIdAndUpdate = async (id, u) => { update = u; };
+  try {
+    await callLogout({}, { userId: 'u1' });
+  } finally {
+    User.findByIdAndUpdate = originalFindByIdAndUpdate;
+  }
+  assert.deepEqual(update, { refreshToken: null, previousRefreshToken: null, refreshSessions: [] });
 });

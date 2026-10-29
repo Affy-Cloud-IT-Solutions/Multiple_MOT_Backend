@@ -116,6 +116,7 @@ const DEFAULT_SERVICES = [
 ];
 
 const Garage = require('../models/Garage');
+const { isGarageVisibleToCustomers } = require('../utils/garageProfile');
 
 function resolveServiceIcon(name = '', category = '') {
   const s = `${name} ${category}`.toLowerCase();
@@ -155,7 +156,10 @@ async function getAllServices(req, res) {
     const { category, search } = req.query;
 
     // Fetch approved garages with their configured services
-    const approvedGarages = await Garage.find({ status: 'Approved' }).select('name services');
+    // Only garages customers can see (Approved + complete profile) count towards the services offered
+    const approvedGarages = (await Garage.find({ status: 'Approved' })
+      .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
+      .filter(isGarageVisibleToCustomers);
 
     // Case-insensitive service aggregation map
     const serviceMap = new Map();

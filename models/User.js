@@ -52,7 +52,16 @@ const UserSchema = new mongoose.Schema({
     refreshTokenRotatedAt: {
         type: Date,
         default: null
-    }
+    },
+    // One entry per signed-in device, so signing in on another device doesn't end this one's session.
+    // previousToken/rotatedAt give each device a short grace window after its token is rotated.
+    refreshSessions: [{
+        token: { type: String, required: true },
+        previousToken: { type: String, default: null },
+        rotatedAt: { type: Date, default: null },
+        createdAt: { type: Date, default: Date.now },
+        _id: false
+    }]
 }, {
     timestamps: true
 });
