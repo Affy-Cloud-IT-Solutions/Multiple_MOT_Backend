@@ -502,6 +502,9 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
               : `Great news! Your garage <strong>${garageName}</strong> is approved on Ondoorcarservice. To appear to drivers and receive bookings, please complete your garage profile in the dashboard (still to do: ${missingSteps.join(', ')}).`)
           : `We are sorry, but your garage application for <strong>${garageName}</strong> could not be approved at this time.`}
       </p>
+      ${!isApproved ? `
+        <p class="text">To apply again, sign in to the Ondoorcarservice Hub app, go through each setup step again (location, services and documents) and resubmit your application for approval.</p>
+      ` : ''}
       ${!isApproved && reason ? `
         <div class="card-box" style="border-left: 4px solid #DC2626;">
           <div style="font-size: 13px; font-weight: 700; color: #991B1B; margin-bottom: 4px;">Reason:</div>
@@ -528,7 +531,7 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
       ? (profile.complete
           ? `Great news! Your garage ${garageName} is approved and live on Ondoorcarservice.`
           : `Your garage ${garageName} is approved. Complete your profile (${missingSteps.join(', ')}) to appear to drivers.`)
-      : `Your application for ${garageName} was not approved: ${reason}`
+      : `Your application for ${garageName} was not approved: ${reason}\nTo apply again, sign in to the Ondoorcarservice Hub app, go through each setup step again and resubmit your application.`
   });
 }
 

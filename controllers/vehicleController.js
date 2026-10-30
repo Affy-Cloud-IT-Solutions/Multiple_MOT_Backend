@@ -274,16 +274,27 @@ async function lookupDVLA(req, res) {
       });
     }
 
+    // Vehicles under 3 years old have no tests yet - DVSA returns their first MOT due date instead
+    const firstMotDueDate = rawData.motTestDueDate || '';
+    const registrationDate = rawData.registrationDate || rawData.firstUsedDate || '';
+    const yearSource = rawData.manufactureYear || rawData.firstUsedDate || rawData.registrationDate || rawData.manufactureDate || '';
+    const yearMatch = String(yearSource).match(/^(\d{4})/);
+
+    // Only real DVSA values - unknown fields stay empty rather than being guessed
     const mappedVehicle = {
       registrationNumber: rawData.registration,
       make: rawData.make,
       model: rawData.model,
-      year: rawData.firstUsedDate ? new Date(rawData.firstUsedDate).getFullYear() : 2018,
-      color: rawData.primaryColour || 'Grey',
-      fuelType: rawData.fuelType || 'Petrol',
-      engineSize: rawData.engineSize ? `${rawData.engineSize}cc` : '1500cc',
-      motStatus: latestTest ? (latestTest.testResult === 'PASSED' ? 'Valid' : 'Expired') : 'No History',
-      motExpiryDate: latestTest ? latestTest.expiryDate : '',
+      year: yearMatch ? Number(yearMatch[1]) : null,
+      color: rawData.primaryColour || '',
+      fuelType: rawData.fuelType || '',
+      engineSize: rawData.engineSize ? `${rawData.engineSize}cc` : '',
+      registrationDate,
+      motTestDueDate: firstMotDueDate,
+      motStatus: latestTest
+        ? (latestTest.testResult === 'PASSED' ? 'Valid' : 'Expired')
+        : (firstMotDueDate ? 'Not Yet Due' : 'No History'),
+      motExpiryDate: latestTest ? latestTest.expiryDate : firstMotDueDate,
       lastServiceDate: latestTest ? latestTest.completedDate : '',
       testNumber: latestTest ? latestTest.motTestNumber : '',
       mileage: latestTest ? (latestTest.odometerValue ? `${latestTest.odometerValue} ${latestTest.odometerUnit === 'MI' ? 'miles' : 'km'}` : 'N/A') : 'N/A',

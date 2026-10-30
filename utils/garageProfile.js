@@ -12,13 +12,18 @@ function getGarageProfileCompletion(garage) {
     Boolean(String(g.address || '').trim() && String(g.postcode || '').trim()) &&
     !(Number(g.latitude) === DEFAULT_LATITUDE && Number(g.longitude) === DEFAULT_LONGITUDE);
   const hasActiveService = Array.isArray(g.services) && g.services.some(s => s && s.isActive !== false);
-  const hasDocuments = Array.isArray(g.verificationDocuments) && g.verificationDocuments.length > 0;
+  const documents = Array.isArray(g.verificationDocuments) ? g.verificationDocuments : [];
+  const hasDocuments = documents.length > 0;
+  // A rejected document needs a new copy before the documents step counts as done again
+  const hasRejectedDocuments = documents.some(d => d && d.status === 'Rejected');
+  // After a full application rejection the garage must save these steps again
+  const redoSteps = Array.isArray(g.redoSteps) ? g.redoSteps : [];
 
   const steps = {
-    location: Boolean(g.locationConfigured) || hasRealLocation,
+    location: (Boolean(g.locationConfigured) || hasRealLocation) && !redoSteps.includes('location'),
     // Must have something customers can actually book
-    services: hasActiveService,
-    documents: Boolean(g.documentsConfigured) || hasDocuments
+    services: hasActiveService && !redoSteps.includes('services'),
+    documents: (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments
   };
   const missing = Object.keys(steps).filter(key => !steps[key]);
   // Same 4-item checklist the garage admin sees: registration (always done once the garage exists) + the 3 steps

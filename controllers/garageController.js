@@ -3,6 +3,8 @@ const User = require('../models/User');
 const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
+const ServiceCategory = require('../models/ServiceCategory');
+const { findMatchingCategory } = require('../utils/serviceCatalog');
 const { getGarageProfileCompletion, isGarageVisibleToCustomers, canManageGarage } = require('../utils/garageProfile');
 const jwt = require('jsonwebtoken');
 const { 
@@ -24,6 +26,7 @@ const STOCK_GARAGE_PHOTO_IDS = [
   'photo-1580273916550-e323be2ae537',
   'photo-1503376780353-7e6692767b70'
 ];
+const MIN_GARAGE_PHOTOS = 3;
 const isStockGaragePhoto = (url) =>
   typeof url === 'string' && url.includes('images.unsplash.com') && STOCK_GARAGE_PHOTO_IDS.some(id => url.includes(id));
 
@@ -314,6 +317,26 @@ async function updateGarage(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
+    // Saving the location step needs at least 3 photos of the garage
+    if (req.body.locationConfigured) {
+      const photos = (images !== undefined ? (Array.isArray(images) ? images : [images]) : garage.images || [])
+        .filter(img => img && !isStockGaragePhoto(img));
+      if (photos.length < MIN_GARAGE_PHOTOS) {
+        return res.status(400).json({ error: `Please upload at least ${MIN_GARAGE_PHOTOS} photos of your garage.` });
+      }
+    }
+
+    // Garages can only offer services in categories the Super Admin has created (and kept active)
+    if (Array.isArray(services) && req.user?.role !== 'admin') {
+      const activeCategories = await ServiceCategory.find({ isActive: true });
+      const notAllowed = services.filter(s => !findMatchingCategory(activeCategories, s && s.category));
+      if (notAllowed.length > 0) {
+        return res.status(400).json({
+          error: `These services are not in an available category: ${notAllowed.map(s => (s && s.name) || 'Unnamed').join(', ')}.`
+        });
+      }
+    }
+
     if (name) garage.name = name;
     if (address !== undefined) garage.address = address;
     if (city !== undefined) garage.city = city;
@@ -337,6 +360,13 @@ async function updateGarage(req, res) {
     if (req.body.locationConfigured !== undefined) garage.locationConfigured = Boolean(req.body.locationConfigured);
     if (req.body.servicesConfigured !== undefined) garage.servicesConfigured = Boolean(req.body.servicesConfigured);
     if (req.body.documentsConfigured !== undefined) garage.documentsConfigured = Boolean(req.body.documentsConfigured);
+    // After a full rejection, saving a step again clears it from the garage's redo list
+    if (Array.isArray(garage.redoSteps) && garage.redoSteps.length > 0) {
+      const redone = [];
+      if (req.body.locationConfigured) redone.push('location');
+      if (req.body.servicesConfigured && (garage.services || []).some(s => s && s.isActive !== false)) redone.push('services');
+      garage.redoSteps = garage.redoSteps.filter(step => !redone.includes(step));
+    }
 
     await garage.save();
 
@@ -373,13 +403,28 @@ async function uploadGarageDocs(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
-    garage.verificationDocuments.push({
-      name: documentName,
-      fileUrl,
-      documentType: documentType || 'MOT Certificate',
-      status: 'Pending',
-      uploadDate: new Date()
-    });
+    // One entry per document: a new upload replaces the earlier (e.g. rejected) copy instead of piling up
+    const isSameDocument = d => d.name === documentName || (Boolean(documentType) && d.documentType === documentType);
+    const existingDoc = garage.verificationDocuments.find(isSameDocument);
+    if (existingDoc) {
+      existingDoc.name = documentName;
+      existingDoc.fileUrl = fileUrl;
+      existingDoc.documentType = documentType || existingDoc.documentType;
+      existingDoc.status = 'Pending';
+      existingDoc.rejectionReason = '';
+      existingDoc.verifiedAt = undefined;
+      existingDoc.uploadDate = new Date();
+      // Drop older duplicates of the same document left by earlier app versions
+      garage.verificationDocuments = garage.verificationDocuments.filter(d => d === existingDoc || !isSameDocument(d));
+    } else {
+      garage.verificationDocuments.push({
+        name: documentName,
+        fileUrl,
+        documentType: documentType || 'MOT Certificate',
+        status: 'Pending',
+        uploadDate: new Date()
+      });
+    }
     garage.verificationStatus = 'Pending'; // resets verification state upon document change
     await garage.save();
 
@@ -410,6 +455,21 @@ async function submitGarageForReview(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
+    // Every step (including re-uploading rejected documents) must be done before the garage can submit
+    const completion = getGarageProfileCompletion(garage);
+    if (!completion.complete) {
+      const labels = { location: 'location', services: 'services & pricing', documents: 'documents' };
+      return res.status(400).json({
+        error: `Please complete these steps before submitting: ${completion.missing.map(step => labels[step] || step).join(', ')}.`,
+        missing: completion.missing
+      });
+    }
+
+    const isResubmission = garage.status === 'Rejected';
+    if (isResubmission) {
+      // A rejected application goes back into the Super Admin's review queue
+      garage.status = 'Pending';
+    }
     garage.verificationStatus = 'Pending';
     garage.rejectionReason = '';
     await garage.save();
@@ -419,12 +479,16 @@ async function submitGarageForReview(req, res) {
       customerName: req.user?.name || garage.name,
       garageId: garage._id,
       status: 'Pending',
-      makeModel: `${garage.name} - Verification Documents & Photos Submitted for Review`
+      makeModel: isResubmission
+        ? `${garage.name} - Application Re-submitted After Rejection`
+        : `${garage.name} - Verification Documents & Photos Submitted for Review`
     });
 
     await Audit.create({
-      activity: 'Garage Submitted for Review',
-      details: `Garage owner submitted "${garage.name}" for Super Admin Go-Live review.`
+      activity: isResubmission ? 'Garage Re-submitted for Review' : 'Garage Submitted for Review',
+      details: isResubmission
+        ? `Garage owner re-submitted "${garage.name}" after a rejection, for Super Admin review.`
+        : `Garage owner submitted "${garage.name}" for Super Admin Go-Live review.`
     });
 
     res.json({
@@ -457,14 +521,25 @@ async function updateGarageStatus(req, res) {
       garage.verificationStatus = 'Verified';
       garage.verificationDate = new Date();
       garage.rejectionReason = '';
+      garage.redoSteps = [];
       if (Array.isArray(garage.verificationDocuments)) {
         garage.verificationDocuments.forEach(doc => {
           doc.status = 'Verified';
+          doc.rejectionReason = '';
         });
       }
     } else if (status === 'Rejected') {
       garage.verificationStatus = 'Rejected';
       garage.rejectionReason = rejectionReason || 'Documentation or verification criteria not verified.';
+      // Whole application rejected: the garage goes through every setup step again and uploads new documents
+      garage.redoSteps = ['location', 'services'];
+      (garage.verificationDocuments || []).forEach(doc => {
+        if (doc.status !== 'Rejected') {
+          doc.status = 'Rejected';
+          doc.rejectionReason = 'Application rejected - please upload a new copy.';
+          doc.verifiedAt = undefined;
+        }
+      });
     } else if (verificationStatus) {
       garage.verificationStatus = verificationStatus;
       if (verificationStatus === 'Verified') {
@@ -1137,11 +1212,7 @@ async function resubmitGarageDocument(req, res) {
     doc.uploadDate = new Date();
     doc.verifiedAt = undefined;
 
-    // Reset garage status to Pending review if it was rejected
-    if (garage.status === 'Rejected') {
-      garage.status = 'Pending';
-      garage.verificationStatus = 'Pending';
-    }
+    // A fully rejected application only goes back to review when the garage resubmits it (submitGarageForReview)
 
     await garage.save();
 
