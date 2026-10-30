@@ -1,4 +1,8 @@
 const ServiceCategory = require('../models/ServiceCategory');
+const Service = require('../models/Service');
+const { STANDARD_SERVICE_TEMPLATES } = require('../config/serviceTemplates');
+const { buildServiceCatalog } = require('../utils/serviceCatalog');
+const { resolveServiceIcon } = require('./serviceController');
 
 const DEFAULT_CATEGORIES = [
   {
@@ -92,6 +96,23 @@ async function getServiceCategories(req, res) {
       error: 'Failed to fetch service categories.',
       categories: DEFAULT_CATEGORIES,
     });
+  }
+}
+
+// 1b. GET /api/service-categories/catalog - Active categories, each with the services garages can pick during setup
+async function getServiceCatalog(req, res) {
+  try {
+    await ensureDefaultCategories();
+    const [categories, catalogServices] = await Promise.all([
+      ServiceCategory.find({ isActive: true }).sort({ sortOrder: 1, createdAt: 1 }),
+      Service.find({ isActive: true }).sort({ sortOrder: 1, createdAt: 1 })
+    ]);
+    // Platform catalog first, then the standard UK templates to fill in common services
+    const groups = buildServiceCatalog(categories, [...catalogServices, ...STANDARD_SERVICE_TEMPLATES], resolveServiceIcon);
+    res.json({ success: true, categories: groups });
+  } catch (error) {
+    console.error('Error building service catalog:', error);
+    res.status(500).json({ success: false, error: 'Failed to load service categories.' });
   }
 }
 
@@ -223,6 +244,7 @@ async function deleteServiceCategory(req, res) {
 
 module.exports = {
   getServiceCategories,
+  getServiceCatalog,
   createServiceCategory,
   updateServiceCategory,
   deleteServiceCategory,

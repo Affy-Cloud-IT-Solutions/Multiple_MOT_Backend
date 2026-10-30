@@ -71,6 +71,12 @@ const GarageSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // Setup steps the garage must go through again after its whole application was rejected.
+    // Each step is cleared when the garage saves it again; documents are tracked by their own status.
+    redoSteps: {
+        type: [{ type: String, enum: ['location', 'services'] }],
+        default: []
+    },
     email: {
         type: String,
         lowercase: true,

@@ -365,5 +365,6 @@ module.exports = {
   updateService,
   deleteService,
   seedDefaultServices,
+  resolveServiceIcon,
   DEFAULT_SERVICES,
 };

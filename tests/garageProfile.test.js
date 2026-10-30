@@ -77,6 +77,15 @@ test('percent follows the garage admin checklist: registration + location + serv
   assert.equal(getGarageProfileCompletion(completeGarage({ services: [] })).percent, 75);
 });
 
+test('steps flagged for redo after a full rejection, and rejected documents, count as not done', () => {
+  const g = completeGarage({ redoSteps: ['location', 'services'] });
+  assert.deepEqual(getGarageProfileCompletion(g).missing, ['location', 'services']);
+
+  const rejectedDoc = completeGarage({ verificationDocuments: [{ name: 'VTS', fileUrl: 'https://x/doc.pdf', status: 'Rejected' }] });
+  assert.deepEqual(getGarageProfileCompletion(rejectedDoc).missing, ['documents']);
+  assert.equal(isGarageVisibleToCustomers(rejectedDoc), false);
+});
+
 test('canManageGarage: platform admin and the garage\'s own admin/staff only', () => {
   const g = completeGarage();
   assert.equal(canManageGarage({ role: 'admin' }, g), true);
