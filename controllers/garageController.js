@@ -40,7 +40,8 @@ const formatDoc = (doc) => {
     ...obj,
     id: (obj._id || obj.id || '').toString(),
     images,
-    logoUrl: (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : '') || images[0] || '',
+    logoUrl: (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : ''),
+    coverImage: images[0] || (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : ''),
     profileCompletion,
     isVisibleToCustomers: obj.status === 'Approved' && profileCompletion.complete
   };
