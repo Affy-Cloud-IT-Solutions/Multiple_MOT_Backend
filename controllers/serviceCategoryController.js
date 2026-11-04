@@ -7,7 +7,7 @@ const { resolveServiceIcon } = require('./serviceController');
 const DEFAULT_CATEGORIES = [
   {
     name: 'MOT',
-    description: 'Annual DVSA Class 4 vehicle safety & roadworthiness inspection',
+    description: 'Annual DVSA vehicle MOT inspection',
     icon: 'shield-check',
     iconBg: '#10B98115',
     iconColor: '#10B981',
@@ -17,7 +17,7 @@ const DEFAULT_CATEGORIES = [
   },
   {
     name: 'Servicing',
-    description: 'Full, interim and major scheduled vehicle servicing and oil replacement',
+    description: 'Scheduled vehicle servicing & oil change',
     icon: 'car-cog',
     iconBg: '#1677FF15',
     iconColor: '#1677FF',
@@ -27,7 +27,7 @@ const DEFAULT_CATEGORIES = [
   },
   {
     name: 'Tyres',
-    description: 'Tyre fitting, puncture repairs, computerized wheel balancing and alignment',
+    description: 'Tyre fitting, balancing & wheel alignment',
     icon: 'tire',
     iconBg: '#F59E0B15',
     iconColor: '#F59E0B',
@@ -37,11 +37,21 @@ const DEFAULT_CATEGORIES = [
   },
   {
     name: 'Repairs',
-    description: 'Mechanical diagnostics, brakes, suspension, exhaust and engine repairs',
+    description: 'Diagnostics, brakes & mechanical repairs',
     icon: 'hammer-wrench',
     iconBg: '#EC489915',
     iconColor: '#EC4899',
     sortOrder: 4,
+    isActive: true,
+    isDefault: true,
+  },
+  {
+    name: 'Others',
+    description: 'Specialist, custom & additional automotive services',
+    icon: 'dots-horizontal-circle-outline',
+    iconBg: '#8B5CF615',
+    iconColor: '#8B5CF6',
+    sortOrder: 5,
     isActive: true,
     isDefault: true,
   },
@@ -56,18 +66,22 @@ function resolveCategoryDesign(name = '') {
   if (s.includes('brake')) return { icon: 'car-brake-alert', iconColor: '#EF4444', iconBg: '#EF444415' };
   if (s.includes('diag') || s.includes('scan')) return { icon: 'engine', iconColor: '#06B6D4', iconBg: '#06B6D415' };
   if (s.includes('battery') || s.includes('electric')) return { icon: 'car-battery', iconColor: '#EAB308', iconBg: '#EAB30815' };
-  if (s.includes('air') || s.includes('ac') || s.includes('regas')) return { icon: 'snowflake', iconColor: '#3B82F6', iconBg: '#3B82F615' };
+  if (/\b(air\s*con|aircon|air\s*conditioning|regas|ac)\b/i.test(s) || s.includes('condit')) return { icon: 'snowflake', iconColor: '#3B82F6', iconBg: '#3B82F615' };
   if (s.includes('exhaust')) return { icon: 'pipe', iconColor: '#6366F1', iconBg: '#6366F115' };
+  if (s.includes('other')) return { icon: 'dots-horizontal-circle-outline', iconColor: '#8B5CF6', iconBg: '#8B5CF615' };
   return { icon: 'wrench', iconColor: '#8B5CF6', iconBg: '#8B5CF615' };
 }
 
-// Helper to ensure initial default 4 categories exist
+// Helper to ensure initial default categories exist
 async function ensureDefaultCategories() {
   try {
-    const count = await ServiceCategory.countDocuments();
-    if (count === 0) {
-      console.log('🌱 Seeding initial default service categories (MOT, Servicing, Tyres, Repairs)...');
-      await ServiceCategory.insertMany(DEFAULT_CATEGORIES);
+    for (const cat of DEFAULT_CATEGORIES) {
+      const exists = await ServiceCategory.findOne({
+        name: { $regex: new RegExp(`^${cat.name.trim()}$`, 'i') }
+      });
+      if (!exists) {
+        await ServiceCategory.create(cat);
+      }
     }
   } catch (err) {
     console.error('Error ensuring default service categories:', err);
@@ -108,7 +122,7 @@ async function getServiceCatalog(req, res) {
       Service.find({ isActive: true }).sort({ sortOrder: 1, createdAt: 1 })
     ]);
     // Platform catalog first, then the standard UK templates to fill in common services
-    const groups = buildServiceCatalog(categories, [...catalogServices, ...STANDARD_SERVICE_TEMPLATES], resolveServiceIcon);
+    const groups = buildServiceCatalog(categories, catalogServices, resolveServiceIcon);
     res.json({ success: true, categories: groups });
   } catch (error) {
     console.error('Error building service catalog:', error);
@@ -230,6 +244,12 @@ async function deleteServiceCategory(req, res) {
     }
 
     await ServiceCategory.findByIdAndDelete(id);
+
+    // Deactivate services belonging to the deleted category to avoid orphans
+    await Service.updateMany(
+      { category: { $regex: new RegExp(`^${category.name.trim()}$`, 'i') } },
+      { isActive: false }
+    );
 
     res.json({
       success: true,

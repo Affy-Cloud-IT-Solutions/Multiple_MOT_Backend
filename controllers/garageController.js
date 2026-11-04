@@ -1538,6 +1538,31 @@ async function deleteGarageService(req, res) {
       return res.status(404).json({ error: 'Service not found or already deleted.' });
     }
 
+    if (removedService && removedService.isCustom) {
+      try {
+        const cleanName = (removedService.name || '').trim();
+        const orConditions = [];
+        if (removedService.serviceId) {
+          orConditions.push({ _id: removedService.serviceId });
+        }
+        if (cleanName) {
+          const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          orConditions.push({
+            name: { $regex: new RegExp('^' + escaped + '$', 'i') },
+            isCustom: true,
+          });
+        }
+        if (orConditions.length > 0) {
+          await Service.updateMany(
+            { $or: orConditions },
+            { $set: { isActive: false, status: 'Rejected' } }
+          );
+        }
+      } catch (e) {
+        console.warn('Error deactivating custom Service document on garage deletion:', e.message);
+      }
+    }
+
     await garage.save();
 
     await Audit.create({
@@ -1602,7 +1627,66 @@ async function seedGarageDefaultServices(req, res) {
   }
 }
 
+/**
+ * Bulk select / update platform catalog services for a garage
+ */
+async function selectCatalogServices(req, res) {
+  try {
+    const { id } = req.params;
+    const { selectedServices } = req.body;
+
+    if (req.user?.role !== 'admin' && String(req.user?.garageId) !== String(id)) {
+      return res.status(403).json({ error: 'Access Denied.' });
+    }
+
+    const garage = await Garage.findById(id);
+    if (!garage) return res.status(404).json({ error: 'Garage not found.' });
+
+    if (!Array.isArray(garage.services)) garage.services = [];
+
+    // Keep existing custom services (both pending and approved)
+    const existingCustomServices = garage.services.filter(s => s.isCustom);
+
+    // Build new list of catalog services from selection
+    const newCatalogServices = [];
+    if (Array.isArray(selectedServices)) {
+      for (const item of selectedServices) {
+        if (!item || item.selected === false) continue;
+        newCatalogServices.push({
+          name: (item.name || '').trim(),
+          category: (item.category || 'Servicing').trim(),
+          price: Number(item.price) || 45,
+          duration: Number(item.duration) || 45,
+          description: (item.description || '').trim(),
+          isActive: item.isActive !== false,
+          isCustom: false,
+          status: 'Approved',
+          availability: garage.workingDays && garage.workingDays.length > 0 ? garage.workingDays : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+        });
+      }
+    }
+
+    garage.services = [...newCatalogServices, ...existingCustomServices];
+    garage.servicesConfigured = true;
+    await garage.save();
+
+    await Audit.create({
+      activity: 'Garage Services Updated',
+      details: `Updated catalog services for garage "${garage.name}" (${newCatalogServices.length} active catalog services).`
+    });
+
+    res.json({
+      success: true,
+      message: 'Services saved successfully.',
+      services: garage.services,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
+  selectCatalogServices,
   registerGarage,
   getGarages,
   getGarageById,

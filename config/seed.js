@@ -11,12 +11,7 @@ const { DEFAULT_SERVICES } = require('../controllers/serviceController');
 
 async function seedDatabase() {
     try {
-        // Ensure dynamic services exist
-        const serviceCount = await Service.countDocuments();
-        if (serviceCount === 0) {
-            console.log('🌱 Seeding initial dynamic services...');
-            await Service.insertMany(DEFAULT_SERVICES);
-        }
+        
 
         // Check if data already exists to prevent re-seeding
         const userCount = await User.countDocuments();

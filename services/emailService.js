@@ -1018,6 +1018,86 @@ async function sendMotDueReminderEmail(customer, vehicle, daysLeft, expiryDateFo
   });
 }
 
+/**
+ * Custom Service Approved Email to Garage Admin
+ */
+async function sendCustomServiceApprovedEmailGarage({ garage, service }) {
+  if (!garage?.email) return { skipped: true, reason: 'Garage has no email address' };
+
+  const garageName = garage.name || 'Garage Partner';
+  const serviceName = service.name || 'Custom Service';
+  const category = service.category || 'Others';
+  const priceFormatted = formatPrice(service.price);
+  const duration = service.duration ? `${service.duration} mins` : '';
+
+  const html = createHtmlEmailLayout({
+    title: `Custom Service Approved: ${serviceName}`,
+    badgeText: 'Service Approved',
+    badgeColor: '#10B981',
+    contentHtml: `
+      <p class="text">Hello <strong>${garageName}</strong>,</p>
+      <p class="text">Great news! Your custom service submission <strong>"${serviceName}"</strong> has been reviewed and approved by the platform administration team.</p>
+      <div class="card-box">
+        <div class="info-row"><span class="info-label">Service Name:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Category:</span><span class="info-val">${category}</span></div>
+        ${priceFormatted ? `<div class="info-row"><span class="info-label">Price:</span><span class="info-val">${priceFormatted}</span></div>` : ''}
+        ${duration ? `<div class="info-row"><span class="info-label">Duration:</span><span class="info-val">${duration}</span></div>` : ''}
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #10B981; font-weight: 800;">Live / Active</span></div>
+      </div>
+      <div class="notice-box" style="border-left-color: #10B981; background-color: #F0FDF4; color: #166534;">
+        <div class="notice-title">Now Live for Customers</div>
+        <div>This service is now active on your garage profile and visible to customers for online booking.</div>
+      </div>
+    `,
+  });
+
+  return sendEmail({
+    to: garage.email,
+    subject: `[Approved] Custom Service "${serviceName}" is now live`,
+    html,
+    text: `Hello ${garageName}, your custom service "${serviceName}" under category "${category}" has been approved by the platform admin and is now live for customer bookings.`,
+  });
+}
+
+/**
+ * Custom Service Rejected Email to Garage Admin
+ */
+async function sendCustomServiceRejectedEmailGarage({ garage, service, reason }) {
+  if (!garage?.email) return { skipped: true, reason: 'Garage has no email address' };
+
+  const garageName = garage.name || 'Garage Partner';
+  const serviceName = service.name || 'Custom Service';
+  const category = service.category || 'Others';
+  const rejectionReason = reason || service.rejectionReason || 'Does not meet platform service criteria';
+
+  const html = createHtmlEmailLayout({
+    title: `Custom Service Review: ${serviceName}`,
+    badgeText: 'Review Update',
+    badgeColor: '#EF4444',
+    contentHtml: `
+      <p class="text">Hello <strong>${garageName}</strong>,</p>
+      <p class="text">Thank you for submitting <strong>"${serviceName}"</strong>. After review, our platform administration team was unable to approve this custom service request at this time.</p>
+      <div class="card-box" style="border-left: 4px solid #EF4444;">
+        <div class="info-row"><span class="info-label">Service Name:</span><span class="info-val">${serviceName}</span></div>
+        <div class="info-row"><span class="info-label">Category:</span><span class="info-val">${category}</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: #EF4444; font-weight: 800;">Not Approved</span></div>
+        <div class="info-row"><span class="info-label">Reason:</span><span class="info-val" style="color: #DC2626;">${rejectionReason}</span></div>
+      </div>
+      <div class="notice-box" style="border-left-color: #EF4444; background-color: #FEF2F2; color: #991B1B;">
+        <div class="notice-title">What you can do next</div>
+        <div>You can review the feedback above, make changes to the service details in your Garage Admin app, and re-submit it for review.</div>
+      </div>
+    `,
+  });
+
+  return sendEmail({
+    to: garage.email,
+    subject: `[Update] Custom Service Review: "${serviceName}"`,
+    html,
+    text: `Hello ${garageName}, your custom service "${serviceName}" was not approved by the platform admin. Reason: ${rejectionReason}. You can edit and re-submit it in your Garage Admin dashboard.`,
+  });
+}
+
 module.exports = {
   sendEmail,
   formatGarageLocation,
@@ -1041,5 +1121,7 @@ module.exports = {
   sendBookingRejectedEmail,
   sendVehiclePendingEmail,
   sendVehicleApprovalEmail,
-  sendMotDueReminderEmail
+  sendMotDueReminderEmail,
+  sendCustomServiceApprovedEmailGarage,
+  sendCustomServiceRejectedEmailGarage,
 };
