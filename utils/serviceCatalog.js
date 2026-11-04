@@ -44,11 +44,13 @@ function buildServiceCatalog(categories, suggestions, resolveIcon = () => ({ ico
     seen.add(key);
     const group = groups.find(g => g.name === category.name);
     group.services.push({
+      id: String(s._id || s.id || `svc_${key.replace(/[^a-z0-9]/g, '_')}`),
+      _id: s._id || s.id,
       name,
       // Saved under the Super Admin's category name, so garages and customers see one consistent list
       category: category.name,
-      price: Number(s.price) || 0,
-      duration: Number(s.duration) || 45,
+      price: !isNaN(Number(s.price)) && Number(s.price) >= 0 ? Number(s.price) : 45,
+      duration: Number(s.duration) > 0 ? Number(s.duration) : 45,
       description: s.description || '',
       icon: s.icon || resolveIcon(name, category.name).icon
     });

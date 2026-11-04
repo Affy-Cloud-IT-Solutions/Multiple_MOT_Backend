@@ -57,6 +57,30 @@ const ServiceSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  isCustom: {
+    type: Boolean,
+    default: false,
+  },
+  status: {
+    type: String,
+    enum: ['Pending', 'Approved', 'Rejected'],
+    default: 'Approved',
+  },
+  garageId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Garage',
+    default: null,
+  },
+  garageName: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  rejectionReason: {
+    type: String,
+    default: '',
+    trim: true,
+  },
 }, {
   timestamps: true,
 });

@@ -109,7 +109,11 @@ const GarageSchema = new mongoose.Schema({
         duration: { type: Number, required: true, default: 45, min: 5 }, // in minutes
         description: { type: String, default: '', trim: true },
         availability: [{ type: String }], // e.g. ["Monday", "Tuesday", ...]
-        isActive: { type: Boolean, default: true }
+        isActive: { type: Boolean, default: true },
+        isCustom: { type: Boolean, default: false },
+        status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Approved' },
+        rejectionReason: { type: String, default: '' },
+        serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service' }
     }],
     workingDays: {
         type: [String],
