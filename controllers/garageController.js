@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Audit = require('../models/Audit');
 const Alert = require('../models/Alert');
 const Vehicle = require('../models/Vehicle');
+const Service = require('../models/Service');
 const ServiceCategory = require('../models/ServiceCategory');
 const { findMatchingCategory } = require('../utils/serviceCatalog');
 const { getGarageProfileCompletion, isGarageVisibleToCustomers, canManageGarage } = require('../utils/garageProfile');
@@ -1461,6 +1462,30 @@ async function addGarageService(req, res) {
       else cleanCategory = 'Servicing';
     }
 
+    const isCustom = Boolean(req.body.isCustom) || cleanCategory === 'Others' || cleanCategory === 'Custom';
+
+    let customServiceDoc = null;
+    if (isCustom) {
+      customServiceDoc = await Service.create({
+        name: cleanName,
+        title: cleanName,
+        category: cleanCategory || 'Others',
+        price: parseFloat(numPrice.toFixed(2)),
+        duration: Math.round(numDuration),
+        description: (description || '').trim(),
+        icon: 'hammer-wrench',
+        iconBg: '#F59E0B18',
+        iconColor: '#F59E0B',
+        searchQuery: cleanName,
+        isCustom: true,
+        status: 'Pending',
+        isActive: true, // alive record awaiting Super Admin approval
+        garageId: garage._id,
+        garageName: garage.name,
+        sortOrder: 99
+      });
+    }
+
     const newService = {
       name: cleanName,
       category: cleanCategory,
@@ -1470,7 +1495,10 @@ async function addGarageService(req, res) {
       availability: Array.isArray(availability) && availability.length > 0 
         ? availability 
         : (garage.workingDays && garage.workingDays.length > 0 ? garage.workingDays : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']),
-      isActive: isActive !== false
+      isActive: isCustom ? false : (isActive !== false),
+      isCustom: Boolean(isCustom),
+      status: isCustom ? 'Pending' : 'Approved',
+      serviceId: customServiceDoc ? customServiceDoc._id : undefined
     };
 
     if (!Array.isArray(garage.services)) {
@@ -1481,13 +1509,32 @@ async function addGarageService(req, res) {
 
     const createdService = garage.services[garage.services.length - 1];
 
-    await Audit.create({
-      activity: 'Garage Service Added',
-      details: `Added new service "${cleanName}" (£${numPrice.toFixed(2)}, ${numDuration} mins) to garage "${garage.name}".`
-    });
+    if (isCustom && customServiceDoc) {
+      await Alert.create({
+        type: 'CUSTOM_SERVICE',
+        customerName: req.user?.username || garage.name,
+        garageId: garage._id,
+        serviceId: customServiceDoc._id,
+        serviceName: cleanName,
+        status: 'Pending',
+        makeModel: `${garage.name} - Custom Service "${cleanName}" (£${numPrice.toFixed(2)}) submitted for Super Admin review`
+      });
+
+      await Audit.create({
+        activity: 'Custom Service Submitted for Approval',
+        details: `Garage "${garage.name}" submitted custom service "${cleanName}" (£${numPrice.toFixed(2)}) for Super Admin approval. Not live until approved.`
+      });
+    } else {
+      await Audit.create({
+        activity: 'Garage Service Added',
+        details: `Added new service "${cleanName}" (£${numPrice.toFixed(2)}, ${numDuration} mins) to garage "${garage.name}".`
+      });
+    }
 
     res.status(201).json({
-      message: `Service "${cleanName}" added successfully.`,
+      message: isCustom
+        ? `Custom service "${cleanName}" submitted for Super Admin review. It will not be live until approved.`
+        : `Service "${cleanName}" added successfully.`,
       service: {
         ...createdService.toObject(),
         id: createdService._id.toString()
@@ -1577,6 +1624,9 @@ async function updateGarageService(req, res) {
     }
 
     if (isActive !== undefined) {
+      if (service.isCustom && service.status === 'Pending' && Boolean(isActive)) {
+        return res.status(400).json({ error: 'This custom service is awaiting Super Admin approval and cannot be activated until approved.' });
+      }
       service.isActive = Boolean(isActive);
     }
 
