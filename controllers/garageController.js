@@ -63,6 +63,8 @@ const formatDoc = (doc) => {
     return docObj;
   });
 
+  const isFullyVerified = profileCompletion.percent === 100 && (obj.verificationStatus === 'Verified' || (Array.isArray(verificationDocuments) && verificationDocuments.length > 0 && verificationDocuments.every(d => d && d.status === 'Verified')));
+
   return {
     ...obj,
     id: (obj._id || obj.id || '').toString(),
@@ -71,7 +73,9 @@ const formatDoc = (doc) => {
     coverImage: images[0] || logoUrl || '',
     verificationDocuments,
     profileCompletion,
-    isVisibleToCustomers: obj.status === 'Approved' && profileCompletion.complete
+    isFullyVerified,
+    isVerified: isFullyVerified,
+    isVisibleToCustomers: obj.status !== 'Rejected' && obj.status !== 'Blacklisted'
   };
 };
 
@@ -234,13 +238,13 @@ async function getGarages(req, res) {
   try {
     const role = req.user?.role;
     
-    // Super Admins can see all garages. Customers/unauthenticated users only see Approved garages whose
-    // profile is complete (location, services, documents); garage staff also always see their own garage
-    let query = { status: 'Approved' };
+    // Super Admins can see all garages. Customers/unauthenticated users see all registered garages
+    // unless explicitly Rejected or Blacklisted; garage staff also always see their own garage
+    let query = { status: { $nin: ['Rejected', 'Blacklisted'] } };
     if (role === 'admin') {
       query = {}; // return all garages
     } else if ((role === 'garage_admin' || role === 'staff') && req.user?.garageId) {
-      query = { $or: [{ status: 'Approved' }, { _id: req.user.garageId }] };
+      query = { $or: [{ status: { $nin: ['Rejected', 'Blacklisted'] } }, { _id: req.user.garageId }] };
     }
 
     const found = await Garage.find(query).sort({ rating: -1 });
@@ -493,17 +497,17 @@ async function submitGarageForReview(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
-    // Every step (including re-uploading rejected documents) must be done before the garage can submit
     const completion = getGarageProfileCompletion(garage);
-    if (!completion.complete) {
+    const isResubmission = garage.status === 'Rejected';
+
+    // On a rejected application, required redo steps or rejected docs must be addressed before resubmitting
+    if (isResubmission && (garage.redoSteps?.length > 0 || (garage.verificationDocuments || []).some(d => d.status === 'Rejected'))) {
       const labels = { location: 'location', services: 'services & pricing', documents: 'documents' };
       return res.status(400).json({
         error: `Please complete these steps before submitting: ${completion.missing.map(step => labels[step] || step).join(', ')}.`,
         missing: completion.missing
       });
     }
-
-    const isResubmission = garage.status === 'Rejected';
     if (isResubmission) {
       // A rejected application goes back into the Super Admin's review queue
       garage.status = 'Pending';
@@ -999,7 +1003,7 @@ async function updateGarageStationStatus(req, res) {
 async function getGarageSlots(req, res) {
   try {
     const garageId = req.params.id;
-    const rawDate = req.query.date;
+    const rawDate = req.query?.date;
     const isoDateStr = normalizeToISODate(rawDate);
     const formattedDateDDMMYYYY = formatDateToDDMMYYYY(isoDateStr);
 
@@ -1849,6 +1853,7 @@ module.exports = {
   updateGarageService,
   deleteGarageService,
   seedGarageDefaultServices,
-  submitGarageForReview
+  submitGarageForReview,
+  formatDoc
 };
 

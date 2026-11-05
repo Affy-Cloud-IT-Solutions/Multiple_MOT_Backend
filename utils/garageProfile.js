@@ -1,6 +1,7 @@
 // Garage profile completion - mirrors the "Complete your profile" checklist in the garage admin app
-// (registration, location, services & pricing, MOT/DVLA documents). A garage is only shown to customers
-// once it is Approved AND its profile is complete.
+// (registration, location, services & pricing, MOT/DVLA documents).
+// Approved garages are shown to customers irrespective of whether setup profile is 100% complete.
+// A "Verified" badge is shown to customers only when profile & documents are 100% complete.
 
 // Schema defaults for latitude/longitude (central London) - not a real configured location
 const DEFAULT_LATITUDE = 51.5074;
@@ -19,23 +20,25 @@ function getGarageProfileCompletion(garage) {
   // After a full application rejection the garage must save these steps again
   const redoSteps = Array.isArray(g.redoSteps) ? g.redoSteps : [];
 
+  // Documents step: marked done when documents are uploaded/configured and not rejected
+  const isDocUploaded = (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments;
+
   const steps = {
     location: (Boolean(g.locationConfigured) || hasRealLocation) && !redoSteps.includes('location'),
     // Must have something customers can actually book
     services: hasActiveService && !redoSteps.includes('services'),
-    // Document upload is non-blocking with a 7-day grace period; only explicitly rejected docs block
-    documents: !hasRejectedDocuments
+    documents: isDocUploaded
   };
   const missing = Object.keys(steps).filter(key => !steps[key]);
   // 4-item checklist: registration (done) + location + services + documents uploaded
-  const isDocUploaded = (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments;
   const completedCount = 1 + (steps.location ? 1 : 0) + (steps.services ? 1 : 0) + (isDocUploaded ? 1 : 0);
   const percent = Math.round((completedCount / 4) * 100);
-  return { complete: missing.length === 0, steps, missing, percent };
+  return { complete: percent === 100 && missing.length === 0, steps, missing, percent };
 }
 
 function isGarageVisibleToCustomers(garage) {
-  return Boolean(garage) && garage.status === 'Approved' && getGarageProfileCompletion(garage).complete;
+  // A garage is visible to customers upon creation/setup unless explicitly Rejected or Blacklisted
+  return Boolean(garage) && garage.status !== 'Rejected' && garage.status !== 'Blacklisted';
 }
 
 /** Platform admins and the garage's own admin/staff can always see and manage it. */

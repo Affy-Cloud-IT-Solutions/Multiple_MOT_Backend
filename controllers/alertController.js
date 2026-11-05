@@ -225,8 +225,8 @@ async function createAlert(req, res) {
 
     if (type === 'BOOKED') {
       const garage = await Garage.findById(targetGarageId);
-      if (garage && garage.status !== 'Approved') {
-        return res.status(400).json({ error: 'This garage is currently under review and cannot accept bookings yet.' });
+      if (garage && (garage.status === 'Rejected' || garage.status === 'Blacklisted')) {
+        return res.status(400).json({ error: 'This garage application is rejected and cannot accept bookings.' });
       }
       // Customers can only book garages that are visible to them (profile complete); the garage's own staff can still book
       if (garage && !isGarageVisibleToCustomers(garage) && !canManageGarage(req.user, garage)) {

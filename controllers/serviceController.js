@@ -135,7 +135,7 @@ async function getAllServices(req, res) {
     const platformServices = await Service.find(platformFilter).sort({ sortOrder: 1, createdAt: 1 });
 
     // Fetch approved garages with their configured services
-    const approvedGarages = (await Garage.find({ status: 'Approved' })
+    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
       .filter(isGarageVisibleToCustomers);
 
@@ -668,7 +668,7 @@ async function getCatalogGrouped(req, res) {
     }
 
     // Fetch approved visible garages to collect actively offered custom services
-    const approvedGarages = (await Garage.find({ status: 'Approved' })
+    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
       .filter(isGarageVisibleToCustomers);
 
