@@ -38,9 +38,22 @@ function getGarageProfileCompletion(garage) {
   return { complete: percent === 100 && missing.length === 0, steps, missing, percent };
 }
 
-function isGarageVisibleToCustomers(garage) {
-  // A garage is visible to customers upon creation/setup unless explicitly Rejected or Blacklisted
-  return Boolean(garage) && garage.status !== 'Rejected' && garage.status !== 'Blacklisted';
+function isGarageVisibleToCustomers(garage, isProfileMandatory = false) {
+  if (!garage) return false;
+  // Strictly hidden if Rejected or Blacklisted
+  if (garage.status === 'Rejected' || garage.status === 'Blacklisted') return false;
+
+  // Garages must be approved by Super Admin to appear to customers
+  if (garage.status !== 'Approved') return false;
+
+  // When profile completion is set to mandatory by Super Admin, 100% completion is strictly required
+  if (isProfileMandatory) {
+    const { percent } = getGarageProfileCompletion(garage);
+    return percent === 100;
+  }
+
+  // When profile completion is optional (marketing mode), any Approved garage is shown (grace period for docs)
+  return true;
 }
 
 /** Platform admins and the garage's own admin/staff can always see and manage it. */

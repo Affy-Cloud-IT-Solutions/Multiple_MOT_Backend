@@ -134,10 +134,19 @@ async function getAllServices(req, res) {
     }
     const platformServices = await Service.find(platformFilter).sort({ sortOrder: 1, createdAt: 1 });
 
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
     // Fetch approved garages with their configured services
-    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
+    const approvedGarages = (await Garage.find({ status: 'Approved' })
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
-      .filter(isGarageVisibleToCustomers);
+      .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
     const serviceMap = new Map();
 
@@ -667,10 +676,19 @@ async function getCatalogGrouped(req, res) {
       sanitizeCustomServices().catch(() => {});
     }
 
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
     // Fetch approved visible garages to collect actively offered custom services
-    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
+    const approvedGarages = (await Garage.find({ status: 'Approved' })
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
-      .filter(isGarageVisibleToCustomers);
+      .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
     const activeOfferedCustomNames = new Set();
     const activeOfferedCustomIds = new Set();

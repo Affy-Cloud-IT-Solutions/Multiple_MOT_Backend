@@ -46,7 +46,7 @@ const normalizeGarageImageUrl = (url) => {
   return trimmed;
 };
 
-const formatDoc = (doc) => {
+const formatDoc = (doc, isProfileMandatory = false) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
   // Only photos the garage actually uploaded - an empty list lets the apps show "No photos uploaded"
@@ -75,7 +75,7 @@ const formatDoc = (doc) => {
     profileCompletion,
     isFullyVerified,
     isVerified: isFullyVerified,
-    isVisibleToCustomers: obj.status !== 'Rejected' && obj.status !== 'Blacklisted'
+    isVisibleToCustomers: isGarageVisibleToCustomers(obj, isProfileMandatory)
   };
 };
 
@@ -237,25 +237,33 @@ async function registerGarage(req, res) {
 async function getGarages(req, res) {
   try {
     const role = req.user?.role;
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
     
-    // Super Admins can see all garages. Customers/unauthenticated users see all registered garages
+    // Super Admins can see all garages. Customers/unauthenticated users see Approved garages
     // unless explicitly Rejected or Blacklisted; garage staff also always see their own garage
-    let query = { status: { $nin: ['Rejected', 'Blacklisted'] } };
+    let query = { status: 'Approved' };
     if (role === 'admin') {
       query = {}; // return all garages
     } else if ((role === 'garage_admin' || role === 'staff') && req.user?.garageId) {
-      query = { $or: [{ status: { $nin: ['Rejected', 'Blacklisted'] } }, { _id: req.user.garageId }] };
+      query = { $or: [{ status: 'Approved' }, { _id: req.user.garageId }] };
     }
 
     const found = await Garage.find(query).sort({ rating: -1 });
     const garages = role === 'admin'
       ? found
-      : found.filter(g => isGarageVisibleToCustomers(g) || canManageGarage(req.user, g));
+      : found.filter(g => isGarageVisibleToCustomers(g, isProfileMandatory) || canManageGarage(req.user, g));
 
     // Populate extra metrics for garages
     const enrichedGarages = await Promise.all(
       garages.map(async (g) => {
-        const garageObj = formatDoc(g);
+        const garageObj = formatDoc(g, isProfileMandatory);
         const [staffCount, bookingsCount, garageAlerts] = await Promise.all([
           User.countDocuments({ garageId: g._id, role: { $in: ['staff', 'garage_admin'] } }),
           Alert.countDocuments({ garageId: g._id, type: 'BOOKED' }),
@@ -289,8 +297,17 @@ async function getGarageById(req, res) {
     const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
     const isPlatformAdmin = role === 'admin';
 
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
     // Non-approved or incomplete-profile garages are strictly hidden from customers and unauthenticated users
-    if (!isGarageVisibleToCustomers(garage) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+    if (!isGarageVisibleToCustomers(garage, isProfileMandatory) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
       return res.status(404).json({ error: 'Garage not found or is currently not active.' });
     }
 
@@ -302,8 +319,8 @@ async function getGarageById(req, res) {
     const customerIds = [...new Set(garageAlerts.filter(a => a.customerId).map(a => a.customerId.toString()))];
 
     res.json({
-      ...formatDoc(garage),
-      staffList: staffList.map(formatDoc),
+      ...formatDoc(garage, isProfileMandatory),
+      staffList: staffList.map(doc => formatDoc(doc, isProfileMandatory)),
       staffCount: staffList.length,
       bookingsCount,
       customerCount: customerIds.length
@@ -1016,9 +1033,18 @@ async function getGarageSlots(req, res) {
     const isGarageStaffOrAdmin = (role === 'garage_admin' || role === 'staff') && String(req.user?.garageId) === String(garage._id);
     const isPlatformAdmin = role === 'admin';
 
-    // Slots are never active or bookable by customers until the garage is Approved and its profile is complete
-    if (!isGarageVisibleToCustomers(garage) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
-      return res.status(403).json({ error: 'Garage slots are not active or visible to customers until the garage is approved and its profile is complete.' });
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
+    // Slots are never active or bookable by customers until the garage is Approved (and complete if mandatory)
+    if (!isGarageVisibleToCustomers(garage, isProfileMandatory) && !isGarageStaffOrAdmin && !isPlatformAdmin) {
+      return res.status(403).json({ error: 'Garage slots are not active or visible to customers until the garage is approved.' });
     }
 
     // Filter approved active stations

@@ -23,7 +23,7 @@ function mockResponse() {
   };
 }
 
-test('Lifecycle 1: newly created garage (Pending) is visible to customers but NOT marked Verified', () => {
+test('Lifecycle 1: newly created garage (Pending) is NOT visible to customers until Super Admin approves', () => {
   const newGarage = {
     _id: 'garage_pending_1',
     name: 'Auto Rapid Care',
@@ -37,8 +37,8 @@ test('Lifecycle 1: newly created garage (Pending) is visible to customers but NO
     verificationDocuments: []
   };
 
-  // Visible to customers right after clicking Create Account
-  assert.equal(isGarageVisibleToCustomers(newGarage), true);
+  // Hidden from customers until approved by Super Admin (prevents fraud)
+  assert.equal(isGarageVisibleToCustomers(newGarage), false);
 
   const completion = getGarageProfileCompletion(newGarage);
   // Not 100% complete yet (only registration + location done)
@@ -46,16 +46,16 @@ test('Lifecycle 1: newly created garage (Pending) is visible to customers but NO
   assert.equal(completion.complete, false);
 
   const formatted = garageController.formatDoc(newGarage);
-  assert.equal(formatted.isVisibleToCustomers, true);
+  assert.equal(formatted.isVisibleToCustomers, false);
   assert.equal(formatted.isFullyVerified, false);
   assert.equal(formatted.isVerified, false);
 });
 
-test('Lifecycle 2: partially configured garage (e.g. docs skipped) remains visible and NOT Verified', () => {
+test('Lifecycle 2: approved garage with partial profile (docs skipped in 7-day grace period) is visible in marketing mode and NOT Verified', () => {
   const partialGarage = {
     _id: 'garage_partial_1',
     name: 'Midlands Service Point',
-    status: 'Pending',
+    status: 'Approved',
     verificationStatus: 'Pending',
     address: '45 Broad Street',
     postcode: 'B1 2HP',
@@ -68,13 +68,17 @@ test('Lifecycle 2: partially configured garage (e.g. docs skipped) remains visib
     verificationDocuments: [] // Skipped under 7-day grace period
   };
 
-  assert.equal(isGarageVisibleToCustomers(partialGarage), true);
+  // Visible to customers in marketing mode (toggle OFF / default)
+  assert.equal(isGarageVisibleToCustomers(partialGarage, false), true);
+
+  // Hidden in strict mode (toggle ON)
+  assert.equal(isGarageVisibleToCustomers(partialGarage, true), false);
 
   const completion = getGarageProfileCompletion(partialGarage);
   assert.equal(completion.percent, 75); // 3 of 4 checklist items
   assert.equal(completion.complete, false);
 
-  const formatted = garageController.formatDoc(partialGarage);
+  const formatted = garageController.formatDoc(partialGarage, false);
   assert.equal(formatted.isVisibleToCustomers, true);
   assert.equal(formatted.isFullyVerified, false);
   assert.equal(formatted.isVerified, false);
