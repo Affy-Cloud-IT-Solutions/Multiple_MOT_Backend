@@ -120,8 +120,11 @@ function resolveFileUrl(filename, req) {
   }
 
   const host = req ? (req.get('host') || 'localhost:5000') : 'localhost:5000';
-  const protocol = req ? (req.protocol || 'http') : 'http';
-  return `${protocol}://${host}/uploads/${filename}`;
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1') || host.includes('10.0.2.2');
+  const forwardedProto = req && req.headers ? req.headers['x-forwarded-proto'] : null;
+  const protocol = isLocal ? (req ? req.protocol : 'http') : (forwardedProto || 'https');
+  // Use /api/uploads because Nginx always proxies /api/ to the backend on live servers
+  return `${protocol}://${host}/api/uploads/${filename}`;
 }
 
 module.exports = {

@@ -49,7 +49,7 @@ async function saveFile(file, req) {
     fs.writeFileSync(localPath, file.buffer);
   }
 
-  const relativeUrl = `/uploads/${filename}`;
+  const relativeUrl = `/api/uploads/${filename}`;
   const fullUrl = resolveFileUrl(filename, req);
 
   return {
