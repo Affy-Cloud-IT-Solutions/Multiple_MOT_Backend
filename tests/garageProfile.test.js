@@ -52,6 +52,12 @@ test('approved garages are visible to customers irrespective of profile setup co
   assert.equal(getGarageProfileCompletion(noDocs).percent, 75);
   assert.equal(getGarageProfileCompletion(noDocs).complete, false);
   assert.equal(isGarageVisibleToCustomers(noDocs), true);
+
+  // Even if documentsConfigured flag is true, do NOT tick documents without real files
+  const flagWithoutDocs = completeGarage({ documentsConfigured: true, verificationDocuments: [] });
+  assert.deepEqual(getGarageProfileCompletion(flagWithoutDocs).missing, ['documents']);
+  assert.equal(getGarageProfileCompletion(flagWithoutDocs).steps.documents, false);
+  assert.equal(getGarageProfileCompletion(flagWithoutDocs).percent, 75);
 });
 
 test('garages are visible upon registration unless Rejected or Blacklisted', () => {

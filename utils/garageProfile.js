@@ -14,14 +14,16 @@ function getGarageProfileCompletion(garage) {
     !(Number(g.latitude) === DEFAULT_LATITUDE && Number(g.longitude) === DEFAULT_LONGITUDE);
   const hasActiveService = Array.isArray(g.services) && g.services.some(s => s && s.isActive !== false);
   const documents = Array.isArray(g.verificationDocuments) ? g.verificationDocuments : [];
-  const hasDocuments = documents.length > 0;
+  const validDocuments = documents.filter(d => d && (d.fileUrl || d.url || d.name));
+  const hasDocuments = validDocuments.length > 0;
   // A rejected document needs a new copy before the documents step counts as done again
-  const hasRejectedDocuments = documents.some(d => d && d.status === 'Rejected');
+  const hasRejectedDocuments = validDocuments.some(d => d && d.status === 'Rejected');
   // After a full application rejection the garage must save these steps again
   const redoSteps = Array.isArray(g.redoSteps) ? g.redoSteps : [];
 
-  // Documents step: marked done when documents are uploaded/configured and not rejected
-  const isDocUploaded = (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments;
+  // Documents step: marked done ONLY when documents are genuinely uploaded and not rejected.
+  // Never tick documents on its own if no real files were uploaded.
+  const isDocUploaded = hasDocuments && !hasRejectedDocuments;
 
   const steps = {
     location: (Boolean(g.locationConfigured) || hasRealLocation) && !redoSteps.includes('location'),
