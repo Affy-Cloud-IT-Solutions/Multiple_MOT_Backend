@@ -4,18 +4,9 @@ const multer = require('multer');
 const path = require('path');
 const uploadController = require('../controllers/uploadController');
 
-// Multer Storage Configuration
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, '..', 'uploads'));
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || '';
-    const cleanName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-    cb(null, `${cleanName}_${uniqueSuffix}${ext}`);
-  }
-});
+// Multer Storage Configuration: In-memory storage buffers the file in RAM
+// so it can be streamed directly to Cloudflare R2 without filesystem permission errors (EACCES)
+const storage = multer.memoryStorage();
 
 // File filter for images and standard documents
 const fileFilter = (req, file, cb) => {
