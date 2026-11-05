@@ -481,13 +481,17 @@ async function uploadGarageDocs(req, res) {
     }
     garage.verificationStatus = 'Pending'; // resets verification state upon document change
     if (garage.status === 'Approved') {
-      await Alert.create({
-        type: 'GARAGE_DOCUMENT',
-        customerName: req.user?.username || garage.name,
-        garageId: garage._id,
-        status: 'Pending',
-        makeModel: `${garage.name} - Uploaded ${documentName} for Legal Verification`
-      });
+      try {
+        await Alert.create({
+          type: 'GARAGE_DOCUMENT',
+          customerName: req.user?.username || garage.name,
+          garageId: garage._id,
+          status: 'Pending',
+          makeModel: `${garage.name} - Uploaded ${documentName} for Legal Verification`
+        });
+      } catch (alertErr) {
+        console.warn('[GARAGE DOCUMENT ALERT ERROR]', alertErr.message);
+      }
     }
     await garage.save();
 
@@ -1308,7 +1312,8 @@ async function checkGarageStatusByEmail(req, res) {
 async function resubmitGarageDocument(req, res) {
   try {
     const { id, docId } = req.params;
-    const { newFileUrl, name } = req.body;
+    const newFileUrl = req.body.newFileUrl || req.body.fileUrl;
+    const { name } = req.body;
 
     if (!newFileUrl) {
       return res.status(400).json({ error: 'New document file URL or path is required.' });
