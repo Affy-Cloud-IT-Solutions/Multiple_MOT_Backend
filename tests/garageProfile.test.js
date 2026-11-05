@@ -46,9 +46,10 @@ test('approved but incomplete garages are hidden from customers', () => {
   const onlyInactiveServices = completeGarage({ services: [{ name: 'MOT', price: 45, isActive: false }] });
   assert.equal(isGarageVisibleToCustomers(onlyInactiveServices), false);
 
+  // Document upload is non-blocking with 7-day grace period
   const noDocs = completeGarage({ documentsConfigured: false, verificationDocuments: [] });
-  assert.deepEqual(getGarageProfileCompletion(noDocs).missing, ['documents']);
-  assert.equal(isGarageVisibleToCustomers(noDocs), false);
+  assert.deepEqual(getGarageProfileCompletion(noDocs).missing, []);
+  assert.equal(isGarageVisibleToCustomers(noDocs), true);
 });
 
 test('a complete profile is still hidden until the garage is Approved', () => {

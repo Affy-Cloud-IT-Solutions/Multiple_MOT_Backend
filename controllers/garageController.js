@@ -30,18 +30,45 @@ const MIN_GARAGE_PHOTOS = 3;
 const isStockGaragePhoto = (url) =>
   typeof url === 'string' && url.includes('images.unsplash.com') && STOCK_GARAGE_PHOTO_IDS.some(id => url.includes(id));
 
+const normalizeGarageImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed || isStockGaragePhoto(trimmed)) return '';
+  // Upgrade api.ondoorcarservice.com/uploads/ to /api/uploads/
+  if (trimmed.includes('api.ondoorcarservice.com/uploads/')) {
+    return trimmed.replace('api.ondoorcarservice.com/uploads/', 'api.ondoorcarservice.com/api/uploads/').replace(/^http:/, 'https:');
+  }
+  // If it's a relative path starting with /uploads/, change to /api/uploads/
+  if (trimmed.startsWith('/uploads/')) {
+    return `/api${trimmed}`;
+  }
+  return trimmed;
+};
+
 const formatDoc = (doc) => {
   if (!doc) return null;
   const obj = doc.toObject ? doc.toObject() : doc;
   // Only photos the garage actually uploaded - an empty list lets the apps show "No photos uploaded"
-  const images = (Array.isArray(obj.images) ? obj.images : []).filter(img => img && !isStockGaragePhoto(img));
+  const rawImages = (Array.isArray(obj.images) ? obj.images : []).filter(img => img && !isStockGaragePhoto(img));
+  const images = rawImages.map(normalizeGarageImageUrl).filter(Boolean);
+  const logoUrl = normalizeGarageImageUrl(obj.logoUrl);
   const profileCompletion = getGarageProfileCompletion(obj);
+  const verificationDocuments = (Array.isArray(obj.verificationDocuments) ? obj.verificationDocuments : []).map(doc => {
+    if (!doc) return doc;
+    const docObj = doc.toObject ? doc.toObject() : { ...doc };
+    if (docObj.fileUrl) {
+      docObj.fileUrl = normalizeGarageImageUrl(docObj.fileUrl);
+    }
+    return docObj;
+  });
+
   return {
     ...obj,
     id: (obj._id || obj.id || '').toString(),
     images,
-    logoUrl: (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : ''),
-    coverImage: images[0] || (obj.logoUrl && !isStockGaragePhoto(obj.logoUrl) ? obj.logoUrl : ''),
+    logoUrl,
+    coverImage: images[0] || logoUrl || '',
+    verificationDocuments,
     profileCompletion,
     isVisibleToCustomers: obj.status === 'Approved' && profileCompletion.complete
   };

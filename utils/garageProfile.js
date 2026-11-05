@@ -23,12 +23,14 @@ function getGarageProfileCompletion(garage) {
     location: (Boolean(g.locationConfigured) || hasRealLocation) && !redoSteps.includes('location'),
     // Must have something customers can actually book
     services: hasActiveService && !redoSteps.includes('services'),
-    documents: (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments
+    // Document upload is non-blocking with a 7-day grace period; only explicitly rejected docs block
+    documents: !hasRejectedDocuments
   };
   const missing = Object.keys(steps).filter(key => !steps[key]);
-  // Same 4-item checklist the garage admin sees: registration (always done once the garage exists) + the 3 steps
-  const totalTasks = Object.keys(steps).length + 1;
-  const percent = Math.round(((totalTasks - missing.length) / totalTasks) * 100);
+  // 4-item checklist: registration (done) + location + services + documents uploaded
+  const isDocUploaded = (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments;
+  const completedCount = 1 + (steps.location ? 1 : 0) + (steps.services ? 1 : 0) + (isDocUploaded ? 1 : 0);
+  const percent = Math.round((completedCount / 4) * 100);
   return { complete: missing.length === 0, steps, missing, percent };
 }
 
