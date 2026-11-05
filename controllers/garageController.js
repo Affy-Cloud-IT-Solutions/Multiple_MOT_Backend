@@ -953,7 +953,8 @@ async function updateGarageStationStatus(req, res) {
       return res.status(404).json({ error: 'Garage not found.' });
     }
 
-    const station = garage.stations.id(stationId);
+    const station = (garage.stations.id && garage.stations.id(stationId)) ||
+      (garage.stations || []).find(s => String(s._id || s.id) === String(stationId));
     if (!station) {
       return res.status(404).json({ error: 'Station not found.' });
     }
