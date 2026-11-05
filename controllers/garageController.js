@@ -77,7 +77,9 @@ const formatDoc = (doc, isProfileMandatory = false) => {
     isVerified: isFullyVerified,
     isProfileMandatory,
     requireFullProfileForVisibility: isProfileMandatory,
-    isVisibleToCustomers: isGarageVisibleToCustomers(obj, isProfileMandatory)
+    isVisibleToCustomers: isGarageVisibleToCustomers(obj, isProfileMandatory),
+    isLocationPending: !profileCompletion.steps.location,
+    isLocationConfigured: Boolean(profileCompletion.steps.location),
   };
 };
 
