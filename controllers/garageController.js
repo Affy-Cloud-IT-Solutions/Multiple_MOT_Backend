@@ -454,6 +454,15 @@ async function uploadGarageDocs(req, res) {
       });
     }
     garage.verificationStatus = 'Pending'; // resets verification state upon document change
+    if (garage.status === 'Approved') {
+      await Alert.create({
+        type: 'GARAGE_DOCUMENT',
+        customerName: req.user?.username || garage.name,
+        garageId: garage._id,
+        status: 'Pending',
+        makeModel: `${garage.name} - Uploaded ${documentName} for Legal Verification`
+      });
+    }
     await garage.save();
 
     await Audit.create({
@@ -546,8 +555,11 @@ async function updateGarageStatus(req, res) {
     }
 
     if (status === 'Approved') {
-      garage.verificationStatus = 'Verified';
-      garage.verificationDate = new Date();
+      const hasDocs = Array.isArray(garage.verificationDocuments) && garage.verificationDocuments.length > 0;
+      garage.verificationStatus = hasDocs ? 'Verified' : 'Pending';
+      if (hasDocs) {
+        garage.verificationDate = new Date();
+      }
       garage.rejectionReason = '';
       garage.redoSteps = [];
       if (Array.isArray(garage.verificationDocuments)) {
@@ -637,6 +649,17 @@ async function updateGarageDocumentStatus(req, res) {
     } else {
       doc.rejectionReason = '';
       doc.verifiedAt = undefined;
+    }
+
+    // Sync overall garage verificationStatus with the state of verificationDocuments
+    const allDocs = Array.isArray(garage.verificationDocuments) ? garage.verificationDocuments : [];
+    if (allDocs.length > 0 && allDocs.every(d => d.status === 'Verified')) {
+      garage.verificationStatus = 'Verified';
+      garage.verificationDate = new Date();
+    } else if (allDocs.some(d => d.status === 'Rejected')) {
+      garage.verificationStatus = 'Rejected';
+    } else {
+      garage.verificationStatus = 'Pending';
     }
 
     await garage.save();
