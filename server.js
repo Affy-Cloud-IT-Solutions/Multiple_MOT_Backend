@@ -82,24 +82,7 @@ const streamUploadedFile = async (req, res, next) => {
 };
 app.get('/uploads/:filename', streamUploadedFile);
 app.get('/api/uploads/:filename', streamUploadedFile);
-  }
-  try {
-    const filename = req.params.filename;
-    const { stream, contentType, contentLength } = await getFromR2(filename);
-    res.setHeader('Content-Type', contentType);
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
-    }
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    stream.pipe(res);
-  } catch (err) {
-    if (err.name === 'NoSuchKey' || (err && err.$metadata && err.$metadata.httpStatusCode === 404)) {
-      return res.status(404).json({ error: 'File not found on storage.' });
-    }
-    console.error('[R2 Stream Error]:', err.message);
-    next(err);
-  }
-});
+
 // Public brand images (e.g. the logo shown in emails)
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
