@@ -3,7 +3,15 @@ const mongoose = require('mongoose');
 const AlertSchema = new mongoose.Schema({
     type: {
         type: String,
-        enum: ['NEW_VEHICLE', 'SOLD', 'BOOKED', 'NEW_STATION', 'GARAGE_REGISTRATION'],
+        enum: [
+            'NEW_VEHICLE',
+            'SOLD',
+            'BOOKED',
+            'NEW_STATION',
+            'GARAGE_REGISTRATION',
+            'GARAGE_DOCUMENT',
+            'CUSTOM_SERVICE'
+        ],
         required: true
     },
     customerName: {
@@ -32,6 +40,10 @@ const AlertSchema = new mongoose.Schema({
     },
     stationName: {
         type: String
+    },
+    serviceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Service'
     },
     slotTime: {
         type: String // e.g. "10:00" or "10:00 - 10:45"
