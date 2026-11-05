@@ -7,3 +7,4 @@ router.get('/', getPlatformConfig);
 router.patch('/', auth, requireRole(['admin']), updatePlatformConfig);
 
 module.exports = router;
+

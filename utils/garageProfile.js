@@ -52,7 +52,7 @@ function isGarageVisibleToCustomers(garage, isProfileMandatory = false) {
     return percent === 100;
   }
 
-  // When profile completion is optional (marketing mode), any Approved garage is shown (grace period for docs)
+  // When profile completion is optional, any Approved garage is shown (7-day grace period for docs)
   return true;
 }
 

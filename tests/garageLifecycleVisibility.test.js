@@ -51,7 +51,7 @@ test('Lifecycle 1: newly created garage (Pending) is NOT visible to customers un
   assert.equal(formatted.isVerified, false);
 });
 
-test('Lifecycle 2: approved garage with partial profile (docs skipped in 7-day grace period) is visible in marketing mode and NOT Verified', () => {
+test('Lifecycle 2: approved garage with partial profile (docs skipped in 7-day grace period) is visible in Optional mode and NOT Verified', () => {
   const partialGarage = {
     _id: 'garage_partial_1',
     name: 'Midlands Service Point',
@@ -68,7 +68,7 @@ test('Lifecycle 2: approved garage with partial profile (docs skipped in 7-day g
     verificationDocuments: [] // Skipped under 7-day grace period
   };
 
-  // Visible to customers in marketing mode (toggle OFF / default)
+  // Visible to customers in Optional mode (toggle OFF / default)
   assert.equal(isGarageVisibleToCustomers(partialGarage, false), true);
 
   // Hidden in strict mode (toggle ON)
