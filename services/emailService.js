@@ -487,19 +487,32 @@ async function sendSuperAdminNewGarageAlert(garage) {
 async function sendGarageStatusEmail(garage, status, reason = '') {
   const isApproved = status === 'Approved';
   const garageName = garage.name || 'Your Garage';
-  // Customers only see approved garages whose profile (location, services, documents) is complete
   const profile = getGarageProfileCompletion(garage);
   const missingSteps = profile.missing.map(step => ({ location: 'location', services: 'services & prices', documents: 'MOT/DVLA documents' }[step] || step));
+
+  let isProfileMandatory = false;
+  try {
+    const { getPlatformSettings } = require('../utils/platformSettings');
+    const settings = await getPlatformSettings();
+    isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+  } catch (e) {
+    isProfileMandatory = false;
+  }
+
+  const isLive = isApproved && (!isProfileMandatory || profile.complete);
+
   const html = createHtmlEmailLayout({
     title: isApproved ? `Garage Approved: ${garageName}` : `Application Update: ${garageName}`,
-    badgeText: isApproved ? 'Garage Live' : 'Application Update',
-    badgeColor: isApproved ? '#059669' : '#DC2626',
+    badgeText: isLive ? 'Garage Live' : isApproved ? 'Application Approved' : 'Application Update',
+    badgeColor: isLive ? '#059669' : isApproved ? '#D97706' : '#DC2626',
     contentHtml: `
       <p class="text">
         ${isApproved 
-          ? (profile.complete
-              ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Ondoorcarservice. Drivers can now find your garage and book online.`
-              : `Great news! Your garage <strong>${garageName}</strong> is approved on Ondoorcarservice. To appear to drivers and receive bookings, please complete your garage profile in the dashboard (still to do: ${missingSteps.join(', ')}).`)
+          ? (isLive
+              ? (profile.complete
+                  ? `Great news! Your garage <strong>${garageName}</strong> is approved and now active on Ondoorcarservice. Your profile is 100% complete and your Verified badge is active.`
+                  : `Great news! Your garage <strong>${garageName}</strong> is approved and live on Ondoorcarservice! Drivers can now discover your workshop and book online. You have a 7-day grace period to upload your documents in the dashboard to earn the Verified badge.`)
+              : `Your garage <strong>${garageName}</strong> has been approved by Super Admin! Platform mandatory setup is active, so your garage will appear to drivers once your profile and documents are 100% complete (still to do: ${missingSteps.join(', ')}).`)
           : `We are sorry, but your garage application for <strong>${garageName}</strong> could not be approved at this time.`}
       </p>
       ${!isApproved ? `
@@ -513,7 +526,7 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
       ` : ''}
       <div class="card-box">
         <div class="info-row"><span class="info-label">Garage Name:</span><span class="info-val">${garageName}</span></div>
-        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? (profile.complete ? 'Approved & Live ✅' : 'Approved - complete your profile to go live') : 'Rejected ❌'}</span></div>
+        <div class="info-row"><span class="info-label">Status:</span><span class="info-val" style="color: ${isApproved ? '#059669' : '#DC2626'}; font-weight: 800;">${isApproved ? (isLive ? (profile.complete ? 'Approved & Live ✅ (Verified)' : 'Approved & Live ✅') : 'Approved (Complete Profile to Go Live)') : 'Rejected ❌'}</span></div>
         <div class="info-row"><span class="info-label">Location:</span><span class="info-val">${formatGarageLocation(garage) || NOT_PROVIDED}</span></div>
       </div>
     `,
@@ -522,13 +535,13 @@ async function sendGarageStatusEmail(garage, status, reason = '') {
   return sendEmail({
     to: garage.email,
     subject: isApproved
-      ? (profile.complete
+      ? (isLive
           ? `[Approved] ${garageName} is live on Ondoorcarservice`
           : `[Approved] ${garageName} - complete your profile to go live`)
       : `[Update] Application for ${garageName}`,
     html,
     text: isApproved
-      ? (profile.complete
+      ? (isLive
           ? `Great news! Your garage ${garageName} is approved and live on Ondoorcarservice.`
           : `Your garage ${garageName} is approved. Complete your profile (${missingSteps.join(', ')}) to appear to drivers.`)
       : `Your application for ${garageName} was not approved: ${reason}\nTo apply again, sign in to the Ondoorcarservice Hub app, go through each setup step again and resubmit your application.`

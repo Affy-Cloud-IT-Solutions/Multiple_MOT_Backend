@@ -14,14 +14,16 @@ function getGarageProfileCompletion(garage) {
     !(Number(g.latitude) === DEFAULT_LATITUDE && Number(g.longitude) === DEFAULT_LONGITUDE);
   const hasActiveService = Array.isArray(g.services) && g.services.some(s => s && s.isActive !== false);
   const documents = Array.isArray(g.verificationDocuments) ? g.verificationDocuments : [];
-  const hasDocuments = documents.length > 0;
+  const validDocuments = documents.filter(d => d && (d.fileUrl || d.url || d.name));
+  const hasDocuments = validDocuments.length > 0;
   // A rejected document needs a new copy before the documents step counts as done again
-  const hasRejectedDocuments = documents.some(d => d && d.status === 'Rejected');
+  const hasRejectedDocuments = validDocuments.some(d => d && d.status === 'Rejected');
   // After a full application rejection the garage must save these steps again
   const redoSteps = Array.isArray(g.redoSteps) ? g.redoSteps : [];
 
-  // Documents step: marked done when documents are uploaded/configured and not rejected
-  const isDocUploaded = (Boolean(g.documentsConfigured) || hasDocuments) && !hasRejectedDocuments;
+  // Documents step: marked done ONLY when documents are genuinely uploaded and not rejected.
+  // Never tick documents on its own if no real files were uploaded.
+  const isDocUploaded = hasDocuments && !hasRejectedDocuments;
 
   const steps = {
     location: (Boolean(g.locationConfigured) || hasRealLocation) && !redoSteps.includes('location'),
@@ -36,9 +38,21 @@ function getGarageProfileCompletion(garage) {
   return { complete: percent === 100 && missing.length === 0, steps, missing, percent };
 }
 
-function isGarageVisibleToCustomers(garage) {
-  // A garage is visible to customers upon creation/setup unless explicitly Rejected or Blacklisted
-  return Boolean(garage) && garage.status !== 'Rejected' && garage.status !== 'Blacklisted';
+function isGarageVisibleToCustomers(garage, isProfileMandatory = false) {
+  if (!garage) return false;
+  // Strictly hidden if not approved (Pending, Rejected, or Blacklisted)
+  if (garage.status !== 'Approved') return false;
+
+  // When profile completion is set to mandatory by Super Admin:
+  // Must have 100% profile completion
+  if (isProfileMandatory) {
+    const { percent } = getGarageProfileCompletion(garage);
+    return percent === 100;
+  }
+
+  // When profile completion is optional (default):
+  // Approved garages are visible to customers immediately (with 7-day grace period for documents)
+  return true;
 }
 
 /** Platform admins and the garage's own admin/staff can always see and manage it. */

@@ -134,10 +134,20 @@ async function getAllServices(req, res) {
     }
     const platformServices = await Service.find(platformFilter).sort({ sortOrder: 1, createdAt: 1 });
 
-    // Fetch approved garages with their configured services
-    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
+    // Fetch visible garages with their configured services
+    const garageQuery = { status: 'Approved' };
+    const approvedGarages = (await Garage.find(garageQuery)
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
-      .filter(isGarageVisibleToCustomers);
+      .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
     const serviceMap = new Map();
 
@@ -667,10 +677,20 @@ async function getCatalogGrouped(req, res) {
       sanitizeCustomServices().catch(() => {});
     }
 
-    // Fetch approved visible garages to collect actively offered custom services
-    const approvedGarages = (await Garage.find({ status: { $nin: ['Rejected', 'Blacklisted'] } })
+    let isProfileMandatory = false;
+    try {
+      const { getPlatformSettings } = require('../utils/platformSettings');
+      const settings = await getPlatformSettings();
+      isProfileMandatory = Boolean(settings?.requireFullProfileForVisibility);
+    } catch (e) {
+      isProfileMandatory = false;
+    }
+
+    // Fetch visible garages to collect actively offered custom services
+    const garageQuery = { status: 'Approved' };
+    const approvedGarages = (await Garage.find(garageQuery)
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
-      .filter(isGarageVisibleToCustomers);
+      .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
     const activeOfferedCustomNames = new Set();
     const activeOfferedCustomIds = new Set();

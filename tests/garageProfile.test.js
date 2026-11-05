@@ -52,14 +52,34 @@ test('approved garages are visible to customers irrespective of profile setup co
   assert.equal(getGarageProfileCompletion(noDocs).percent, 75);
   assert.equal(getGarageProfileCompletion(noDocs).complete, false);
   assert.equal(isGarageVisibleToCustomers(noDocs), true);
+
+  // Even if documentsConfigured flag is true, do NOT tick documents without real files
+  const flagWithoutDocs = completeGarage({ documentsConfigured: true, verificationDocuments: [] });
+  assert.deepEqual(getGarageProfileCompletion(flagWithoutDocs).missing, ['documents']);
+  assert.equal(getGarageProfileCompletion(flagWithoutDocs).steps.documents, false);
+  assert.equal(getGarageProfileCompletion(flagWithoutDocs).percent, 75);
 });
 
-test('garages are visible upon registration unless Rejected or Blacklisted', () => {
-  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Pending' })), true);
+test('garages are visible once approved by Super Admin unless Rejected or Blacklisted', () => {
+  // Pending garages await Super Admin review and are hidden from customers
+  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Pending' })), false);
   assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Approved' })), true);
   assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Rejected' })), false);
   assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Blacklisted' })), false);
   assert.equal(isGarageVisibleToCustomers(null), false);
+});
+
+test('Super Admin toggle: mandatory vs optional profile completion', () => {
+  const partialApproved = completeGarage({ documentsConfigured: false, verificationDocuments: [] });
+  // Optional mode (isProfileMandatory = false): Approved garage is visible despite missing docs
+  assert.equal(isGarageVisibleToCustomers(partialApproved, false), true);
+
+  // Mandatory mode (isProfileMandatory = true): Incomplete garage is strictly hidden
+  assert.equal(isGarageVisibleToCustomers(partialApproved, true), false);
+
+  // Fully complete approved garage is visible in both modes
+  assert.equal(isGarageVisibleToCustomers(completeGarage(), false), true);
+  assert.equal(isGarageVisibleToCustomers(completeGarage(), true), true);
 });
 
 test('older garages without the setup flags count as complete when the real data is present', () => {
