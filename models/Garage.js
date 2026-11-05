@@ -121,8 +121,8 @@ const GarageSchema = new mongoose.Schema({
     },
     stations: [{
         name: { type: String, required: true, trim: true },
-        type: { type: String, default: 'Class 4 MOT Bay' },
-        slotDuration: { type: Number, default: 40 }, // in minutes
+        type: { type: String, default: 'MOT Testing Station' },
+        slotDuration: { type: Number, enum: [30, 45], default: 45 }, // in minutes: 30 or 45
         status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' },
         requestedAt: { type: Date, default: Date.now },
         approvedAt: { type: Date },

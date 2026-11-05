@@ -707,10 +707,37 @@ const FORTY_FIVE_MIN_SLOTS = [
   '14:30', '15:15', '16:00', '16:45'
 ];
 
-function getSlotEndTime(startTimeStr) {
+const THIRTY_MIN_SLOTS = [
+  '08:30', '09:00', '09:30', '10:00', '10:30',
+  '11:00', '11:30', '12:00', '12:30', '13:00',
+  '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00'
+];
+
+function generateSlots(openingTime = '08:30', closingTime = '17:30', duration = 45) {
+  const [startH, startM] = (openingTime || '08:30').split(':').map(Number);
+  const [endH, endM] = (closingTime || '17:30').split(':').map(Number);
+  const startMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 30 : startM);
+  const endMinutes = (isNaN(endH) ? 17 : endH) * 60 + (isNaN(endM) ? 30 : endM);
+
+  const slots = [];
+  let current = startMinutes;
+  const dur = Number(duration) === 30 ? 30 : 45;
+  while (current + dur <= endMinutes) {
+    const h = Math.floor(current / 60);
+    const m = current % 60;
+    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    slots.push(timeStr);
+    current += dur;
+  }
+  return slots.length > 0 ? slots : (dur === 30 ? THIRTY_MIN_SLOTS : FORTY_FIVE_MIN_SLOTS);
+}
+
+function getSlotEndTime(startTimeStr, durationMinutes = 45) {
   const mins = timeToMinutes(startTimeStr);
   if (mins === -1) return '';
-  const endMins = mins + 45;
+  const dur = Number(durationMinutes) === 30 ? 30 : 45;
+  const endMins = mins + dur;
   const endH = Math.floor(endMins / 60);
   const endM = endMins % 60;
   return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
@@ -822,7 +849,7 @@ async function unblockGarageSlot(req, res) {
 async function addGarageStation(req, res) {
   try {
     const garageId = req.params.id;
-    const { name, type = 'Class 4 MOT Bay', slotDuration = 40 } = req.body;
+    const { name, type = 'MOT Testing Station', slotDuration = 45 } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Station name is required.' });
@@ -840,8 +867,8 @@ async function addGarageStation(req, res) {
     // Create new station subdocument with Pending status
     const newStation = {
       name: name.trim(),
-      type: type.trim(),
-      slotDuration: Number(slotDuration) || 40,
+      type: (type && type.trim()) || 'MOT Testing Station',
+      slotDuration: Number(slotDuration) === 30 ? 30 : 45,
       status: 'Pending',
       requestedAt: new Date(),
       isActive: true
@@ -849,6 +876,11 @@ async function addGarageStation(req, res) {
 
     garage.stations = garage.stations || [];
     garage.stations.push(newStation);
+
+    // Pre-populate garage.slots if empty based on chosen duration
+    if (!Array.isArray(garage.slots) || garage.slots.length === 0) {
+      garage.slots = generateSlots(garage.openingTime, garage.closingTime, newStation.slotDuration);
+    }
     await garage.save();
 
     const createdStation = garage.stations[garage.stations.length - 1];
@@ -861,12 +893,12 @@ async function addGarageStation(req, res) {
       stationId: createdStation._id,
       stationName: createdStation.name,
       status: 'Pending',
-      makeModel: `${garage.name} - ${createdStation.name} (${createdStation.type})`
+      makeModel: `${garage.name} - ${createdStation.name} (${createdStation.slotDuration} mins duration)`
     });
 
     await Audit.create({
       activity: 'Station Addition Requested',
-      details: `${req.user?.username || 'Garage Admin'} requested new station "${createdStation.name}" for "${garage.name}". Pending Super Admin approval.`
+      details: `${req.user?.username || 'Garage Admin'} requested new station "${createdStation.name}" (${createdStation.slotDuration} mins duration) for "${garage.name}". Pending Super Admin approval.`
     });
 
     res.status(201).json({
@@ -907,6 +939,10 @@ async function updateGarageStationStatus(req, res) {
     if (status === 'Approved') {
       station.approvedAt = new Date();
       station.rejectionReason = '';
+
+      // Generate or update slots matching the approved station's duration
+      const stationDuration = Number(station.slotDuration) === 30 ? 30 : 45;
+      garage.slots = generateSlots(garage.openingTime, garage.closingTime, stationDuration);
     } else {
       station.rejectionReason = rejectionReason || 'Station request rejected by platform admin';
     }
@@ -961,7 +997,12 @@ async function getGarageSlots(req, res) {
       s => s.status === 'Approved' && s.isActive !== false
     );
 
-    const standardSlots = Array.isArray(garage.slots) ? garage.slots : [];
+    // Determine slot duration from approved stations (or first configured station, default 45)
+    const effectiveDuration = (approvedStations[0]?.slotDuration) || (garage.stations?.[0]?.slotDuration) || 45;
+
+    let standardSlots = Array.isArray(garage.slots) && garage.slots.length > 0
+      ? garage.slots
+      : (approvedStations.length > 0 ? generateSlots(garage.openingTime, garage.closingTime, effectiveDuration) : []);
 
     // If garage has no configured slots or no approved stations, return empty slots list
     if (standardSlots.length === 0 || approvedStations.length === 0) {
@@ -971,7 +1012,7 @@ async function getGarageSlots(req, res) {
         date: formattedDateDDMMYYYY,
         isoDate: isoDateStr,
         workingHours: `${garage.openingTime || '08:00'} - ${garage.closingTime || '18:00'}`,
-        slotDuration: 45,
+        slotDuration: effectiveDuration,
         totalApprovedStations: approvedStations.length,
         totalSlots: 0,
         totalCapacityToday: 0,
@@ -1076,14 +1117,14 @@ async function getGarageSlots(req, res) {
         return bookingDetail;
       });
 
-      const endTime = getSlotEndTime(time);
+      const endTime = getSlotEndTime(time, effectiveDuration);
 
       return {
         slotNumber: slotIndex + 1,
         time,
         endTime,
         slotLabel: `Slot #${slotIndex + 1} (${time} - ${endTime})`,
-        slotDuration: 45,
+        slotDuration: effectiveDuration,
         totalCapacity: totalCapacityPerSlot,
         bookedCount,
         blockedCount,
@@ -1143,8 +1184,8 @@ async function getGarageSlots(req, res) {
       garageName: garage.name,
       date: formattedDateDDMMYYYY, // Day-Month-Year format e.g. "02-09-2026"
       isoDate: isoDateStr,        // "2026-09-02"
-      workingHours: '9 Hours (08:30 - 17:30)',
-      slotDuration: 45,
+      workingHours: `${garage.openingTime || '08:30'} - ${garage.closingTime || '17:30'}`,
+      slotDuration: effectiveDuration,
       totalApprovedStations: approvedStations.length,
       totalSlots,
       totalCapacityToday,
