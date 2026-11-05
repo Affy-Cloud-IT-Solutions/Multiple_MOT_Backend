@@ -1,10 +1,66 @@
 const path = require('path');
 const fs = require('fs');
+const { isR2Configured, uploadToR2, resolveFileUrl } = require('../config/r2Storage');
 
-// Ensure uploads folder exists
+// Ensure local uploads folder exists for fallback
 const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (e) {
+  // Ignore permission error in restricted container environments
+  console.warn('[Upload Directory Warning] Could not ensure local uploads directory exists:', e.message);
+}
+
+/**
+ * Helper to generate a clean, unique filename
+ */
+function generateUniqueFilename(originalname = 'file') {
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  const ext = path.extname(originalname) || '';
+  const cleanName = path.basename(originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${cleanName}_${uniqueSuffix}${ext}`;
+}
+
+/**
+ * Save a single file buffer to R2 (or local disk fallback)
+ */
+async function saveFile(file, req) {
+  const filename = generateUniqueFilename(file.originalname);
+  let storageType = 'r2';
+
+  if (isR2Configured()) {
+    try {
+      await uploadToR2({
+        buffer: file.buffer,
+        filename: filename,
+        mimetype: file.mimetype,
+      });
+    } catch (r2Err) {
+      console.warn('[R2 Upload Warning] Cloudflare R2 upload failed, attempting local fallback:', r2Err.message);
+      storageType = 'local';
+      const localPath = path.join(uploadsDir, filename);
+      fs.writeFileSync(localPath, file.buffer);
+    }
+  } else {
+    storageType = 'local';
+    const localPath = path.join(uploadsDir, filename);
+    fs.writeFileSync(localPath, file.buffer);
+  }
+
+  const relativeUrl = `/uploads/${filename}`;
+  const fullUrl = resolveFileUrl(filename, req);
+
+  return {
+    filename,
+    originalName: file.originalname,
+    size: file.size,
+    mimetype: file.mimetype,
+    fileUrl: fullUrl,
+    relativeUrl: relativeUrl,
+    storage: storageType,
+  };
 }
 
 // Single file upload handler
@@ -14,19 +70,11 @@ async function handleFileUpload(req, res) {
       return res.status(400).json({ error: 'No file was uploaded.' });
     }
 
-    const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
-    const relativeUrl = `/uploads/${req.file.filename}`;
-    const fullUrl = `${protocol}://${host}${relativeUrl}`;
+    const fileData = await saveFile(req.file, req);
 
     res.status(201).json({
       message: 'File uploaded successfully.',
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-      fileUrl: fullUrl,
-      relativeUrl: relativeUrl
+      ...fileData,
     });
   } catch (error) {
     console.error('File upload error:', error);
@@ -41,25 +89,13 @@ async function handleMultipleFilesUpload(req, res) {
       return res.status(400).json({ error: 'No files were uploaded.' });
     }
 
-    const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
-
-    const uploadedFiles = req.files.map(file => {
-      const relativeUrl = `/uploads/${file.filename}`;
-      const fullUrl = `${protocol}://${host}${relativeUrl}`;
-      return {
-        filename: file.filename,
-        originalName: file.originalname,
-        size: file.size,
-        mimetype: file.mimetype,
-        fileUrl: fullUrl,
-        relativeUrl: relativeUrl
-      };
-    });
+    const uploadedFiles = await Promise.all(
+      req.files.map((file) => saveFile(file, req))
+    );
 
     res.status(201).json({
       message: `${uploadedFiles.length} file(s) uploaded successfully.`,
-      files: uploadedFiles
+      files: uploadedFiles,
     });
   } catch (error) {
     console.error('Multiple file upload error:', error);
@@ -69,5 +105,5 @@ async function handleMultipleFilesUpload(req, res) {
 
 module.exports = {
   handleFileUpload,
-  handleMultipleFilesUpload
+  handleMultipleFilesUpload,
 };

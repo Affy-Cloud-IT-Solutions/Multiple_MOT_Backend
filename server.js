@@ -50,8 +50,32 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static uploaded files
+// Serve static uploaded files (from local disk if present)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Stream uploaded files from Cloudflare R2 if not present on local disk
+const { isR2Configured, getFromR2 } = require('./config/r2Storage');
+app.get('/uploads/:filename', async (req, res, next) => {
+  if (!isR2Configured()) {
+    return res.status(404).json({ error: 'File not found.' });
+  }
+  try {
+    const filename = req.params.filename;
+    const { stream, contentType, contentLength } = await getFromR2(filename);
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    stream.pipe(res);
+  } catch (err) {
+    if (err.name === 'NoSuchKey' || (err && err.$metadata && err.$metadata.httpStatusCode === 404)) {
+      return res.status(404).json({ error: 'File not found on storage.' });
+    }
+    console.error('[R2 Stream Error]:', err.message);
+    next(err);
+  }
+});
 // Public brand images (e.g. the logo shown in emails)
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
