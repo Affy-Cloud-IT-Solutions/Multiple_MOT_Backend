@@ -34,27 +34,31 @@ test('an approved garage with location, an active service and documents is visib
   assert.equal(isGarageVisibleToCustomers(g), true);
 });
 
-test('approved but incomplete garages are hidden from customers', () => {
+test('approved garages are visible to customers irrespective of profile setup completion', () => {
   const noLocation = completeGarage({ locationConfigured: false, latitude: DEFAULT_LATITUDE, longitude: DEFAULT_LONGITUDE });
   assert.deepEqual(getGarageProfileCompletion(noLocation).missing, ['location']);
-  assert.equal(isGarageVisibleToCustomers(noLocation), false);
+  assert.equal(isGarageVisibleToCustomers(noLocation), true);
 
   const noServices = completeGarage({ services: [] });
   assert.deepEqual(getGarageProfileCompletion(noServices).missing, ['services']);
-  assert.equal(isGarageVisibleToCustomers(noServices), false);
+  assert.equal(isGarageVisibleToCustomers(noServices), true);
 
   const onlyInactiveServices = completeGarage({ services: [{ name: 'MOT', price: 45, isActive: false }] });
-  assert.equal(isGarageVisibleToCustomers(onlyInactiveServices), false);
+  assert.equal(isGarageVisibleToCustomers(onlyInactiveServices), true);
 
-  // Document upload is non-blocking with 7-day grace period
+  // Document upload is optional with 7-day grace period; missing docs gives 75%
   const noDocs = completeGarage({ documentsConfigured: false, verificationDocuments: [] });
-  assert.deepEqual(getGarageProfileCompletion(noDocs).missing, []);
+  assert.deepEqual(getGarageProfileCompletion(noDocs).missing, ['documents']);
+  assert.equal(getGarageProfileCompletion(noDocs).percent, 75);
+  assert.equal(getGarageProfileCompletion(noDocs).complete, false);
   assert.equal(isGarageVisibleToCustomers(noDocs), true);
 });
 
-test('a complete profile is still hidden until the garage is Approved', () => {
-  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Pending' })), false);
+test('garages are visible upon registration unless Rejected or Blacklisted', () => {
+  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Pending' })), true);
+  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Approved' })), true);
   assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Rejected' })), false);
+  assert.equal(isGarageVisibleToCustomers(completeGarage({ status: 'Blacklisted' })), false);
   assert.equal(isGarageVisibleToCustomers(null), false);
 });
 
@@ -84,7 +88,9 @@ test('steps flagged for redo after a full rejection, and rejected documents, cou
 
   const rejectedDoc = completeGarage({ verificationDocuments: [{ name: 'VTS', fileUrl: 'https://x/doc.pdf', status: 'Rejected' }] });
   assert.deepEqual(getGarageProfileCompletion(rejectedDoc).missing, ['documents']);
-  assert.equal(isGarageVisibleToCustomers(rejectedDoc), false);
+  // Rejected documents make profile incomplete (percent < 100)
+  assert.equal(getGarageProfileCompletion(rejectedDoc).percent, 75);
+  assert.equal(getGarageProfileCompletion(rejectedDoc).complete, false);
 });
 
 test('canManageGarage: platform admin and the garage\'s own admin/staff only', () => {
