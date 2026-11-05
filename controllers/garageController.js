@@ -75,6 +75,8 @@ const formatDoc = (doc, isProfileMandatory = false) => {
     profileCompletion,
     isFullyVerified,
     isVerified: isFullyVerified,
+    isProfileMandatory,
+    requireFullProfileForVisibility: isProfileMandatory,
     isVisibleToCustomers: isGarageVisibleToCustomers(obj, isProfileMandatory)
   };
 };
@@ -246,8 +248,8 @@ async function getGarages(req, res) {
       isProfileMandatory = false;
     }
     
-    // Super Admins can see all garages. Customers/unauthenticated users see Approved garages
-    // unless explicitly Rejected or Blacklisted; garage staff also always see their own garage
+    // Super Admins can see all garages. Approved garages are shown to customers (subject to mandatory profile check if enabled).
+    // Garages can also see their own record regardless of status.
     let query = { status: 'Approved' };
     if (role === 'admin') {
       query = {}; // return all garages

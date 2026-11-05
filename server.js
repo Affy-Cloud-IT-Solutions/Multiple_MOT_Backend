@@ -228,7 +228,7 @@ app.use((err, req, res, next) => {
 
 const { runDailyCheck } = require('./services/reminderService');
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
   console.log(`  MOT Reminder System Backend Server Started!  `);
   console.log(`  Listening on Port: http://localhost:${PORT}   `);

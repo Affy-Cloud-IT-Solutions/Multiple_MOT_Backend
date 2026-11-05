@@ -40,19 +40,18 @@ function getGarageProfileCompletion(garage) {
 
 function isGarageVisibleToCustomers(garage, isProfileMandatory = false) {
   if (!garage) return false;
-  // Strictly hidden if Rejected or Blacklisted
-  if (garage.status === 'Rejected' || garage.status === 'Blacklisted') return false;
-
-  // Garages must be approved by Super Admin to appear to customers
+  // Strictly hidden if not approved (Pending, Rejected, or Blacklisted)
   if (garage.status !== 'Approved') return false;
 
-  // When profile completion is set to mandatory by Super Admin, 100% completion is strictly required
+  // When profile completion is set to mandatory by Super Admin:
+  // Must have 100% profile completion
   if (isProfileMandatory) {
     const { percent } = getGarageProfileCompletion(garage);
     return percent === 100;
   }
 
-  // When profile completion is optional, any Approved garage is shown (7-day grace period for docs)
+  // When profile completion is optional (default):
+  // Approved garages are visible to customers immediately (with 7-day grace period for documents)
   return true;
 }
 

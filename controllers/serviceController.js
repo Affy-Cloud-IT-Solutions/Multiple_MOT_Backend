@@ -143,8 +143,9 @@ async function getAllServices(req, res) {
       isProfileMandatory = false;
     }
 
-    // Fetch approved garages with their configured services
-    const approvedGarages = (await Garage.find({ status: 'Approved' })
+    // Fetch visible garages with their configured services
+    const garageQuery = { status: 'Approved' };
+    const approvedGarages = (await Garage.find(garageQuery)
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
       .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
@@ -685,8 +686,9 @@ async function getCatalogGrouped(req, res) {
       isProfileMandatory = false;
     }
 
-    // Fetch approved visible garages to collect actively offered custom services
-    const approvedGarages = (await Garage.find({ status: 'Approved' })
+    // Fetch visible garages to collect actively offered custom services
+    const garageQuery = { status: 'Approved' };
+    const approvedGarages = (await Garage.find(garageQuery)
       .select('name status services address postcode latitude longitude locationConfigured documentsConfigured verificationDocuments'))
       .filter(g => isGarageVisibleToCustomers(g, isProfileMandatory));
 
