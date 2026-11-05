@@ -2,6 +2,7 @@ const Service = require('../models/Service');
 const Garage = require('../models/Garage');
 const User = require('../models/User');
 const Audit = require('../models/Audit');
+const Alert = require('../models/Alert');
 const ServiceCategory = require('../models/ServiceCategory');
 const { isGarageVisibleToCustomers } = require('../utils/garageProfile');
 const {
@@ -513,6 +514,11 @@ async function approveCustomService(req, res) {
       }
     }
 
+    await Alert.updateMany(
+      { type: 'CUSTOM_SERVICE', serviceId: service._id },
+      { status: 'Approved' }
+    );
+
     await Audit.create({
       activity: 'Custom Service Approved',
       details: `Approved custom service "${service.name}" for category "${service.category}". Now live platform-wide.`
@@ -612,6 +618,11 @@ async function rejectCustomService(req, res) {
     } catch (gErr) {
       console.warn('[REJECT SERVICE] Error updating garage services:', gErr.message);
     }
+
+    await Alert.updateMany(
+      { type: 'CUSTOM_SERVICE', serviceId: service._id },
+      { status: 'Rejected', rejectionReason: rejectionReason }
+    );
 
     await Audit.create({
       activity: 'Custom Service Rejected',
