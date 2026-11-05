@@ -1,4 +1,9 @@
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+let S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand;
+try {
+  ({ S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3'));
+} catch (e) {
+  console.warn('[R2 Storage] @aws-sdk/client-s3 package is not installed. Cloudflare R2 will remain disabled.');
+}
 const path = require('path');
 
 let s3ClientInstance = null;
@@ -8,6 +13,7 @@ let s3ClientInstance = null;
  */
 function isR2Configured() {
   return Boolean(
+    Boolean(S3Client) &&
     process.env.R2_ACCESS_KEY_ID &&
     process.env.R2_SECRET_ACCESS_KEY &&
     (process.env.R2_ENDPOINT || process.env.R2_ACCOUNT_ID) &&
